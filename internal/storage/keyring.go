@@ -129,6 +129,13 @@ func NewKeyringConfig(name, configDir string) (*keyring.Config, error) {
 			}
 		}
 	}
+
+	if ssoBackend, found := os.LookupEnv("AWS_SSO_BACKEND"); found && ssoBackend == "pass" {
+		if passDir, found := os.LookupEnv("AWS_SSO_PASS_PASSWORD_STORE_DIR"); found {
+			c.PassDir = passDir
+		}
+	}
+
 	return &c, nil
 }
 

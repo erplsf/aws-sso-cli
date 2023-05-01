@@ -376,6 +376,39 @@ func TestNewKeyringConfig(t *testing.T) {
 	assert.Equal(t, "password", NewPassword)
 }
 
+func TestNewPassKeyringConfig(t *testing.T) {
+	d, err := os.MkdirTemp("", "test-keyring")
+	assert.NoError(t, err)
+
+	defer func() {
+		os.RemoveAll(d)
+	}()
+
+	c, err := NewKeyringConfig("", d)
+	assert.NoError(t, err)
+	assert.Equal(t, "", c.PassDir)
+
+	os.Setenv("AWS_SSO_BACKEND", "pass")
+	c, err = NewKeyringConfig("", d)
+	assert.NoError(t, err)
+	assert.Equal(t, "", c.PassDir)
+
+	os.Unsetenv("AWS_SSO_BACKEND")
+	os.Setenv("AWS_SSO_PASS_PASSWORD_STORE_DIR", "/tmp/some-dir")
+	c, err = NewKeyringConfig("", d)
+	assert.NoError(t, err)
+	assert.Equal(t, "", c.PassDir)
+
+	os.Setenv("AWS_SSO_BACKEND", "pass")
+	os.Setenv("AWS_SSO_PASS_PASSWORD_STORE_DIR", "/tmp/some-dir")
+	c, err = NewKeyringConfig("", d)
+	assert.NoError(t, err)
+	assert.Equal(t, "/tmp/some-dir", c.PassDir)
+
+	os.Unsetenv("AWS_SSO_BACKEND")
+	os.Unsetenv("AWS_SSO_PASS_PASSWORD_STORE_DIR")
+}
+
 func TestKeyringSuiteFails(t *testing.T) {
 	d, err := os.MkdirTemp("", "test-keyring")
 	assert.NoError(t, err)
