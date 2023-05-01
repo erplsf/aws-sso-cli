@@ -7,7 +7,7 @@ in import (fetchTree nixpkgs.locked) {
 
 pkgs.buildGoApplication {
   pname = "aws-sso-cli";
-  version = "1.9.10";
+  version = "main";
   pwd = ./.;
   src = ./.;
   modules = ./gomod2nix.toml;
