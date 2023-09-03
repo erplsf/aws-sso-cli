@@ -2,7 +2,7 @@ package sso
 
 /*
  * AWS SSO CLI
- * Copyright (c) 2021-2022 Aaron Turner  <synfinatic at gmail dot com>
+ * Copyright (c) 2021-2023 Aaron Turner  <synfinatic at gmail dot com>
  *
  * This program is free software: you can redistribute it
  * and/or modify it under the terms of the GNU General Public License as
@@ -27,6 +27,7 @@ import (
 	"time"
 
 	// "github.com/davecgh/go-spew/spew"
+	"github.com/synfinatic/aws-sso-cli/internal/tags"
 	"github.com/synfinatic/aws-sso-cli/internal/utils"
 )
 
@@ -276,6 +277,7 @@ func (c *Cache) Refresh(sso *AWSSSO, config *SSOConfig, ssoName string) error {
 		return nil
 	}
 	c.refreshed = true
+	log.Debugf("refreshing %s SSO cache", ssoName)
 
 	// save role creds expires time
 	expires := map[string]int64{}
@@ -325,7 +327,26 @@ func (c *Cache) Refresh(sso *AWSSSO, config *SSOConfig, ssoName string) error {
 	return nil
 }
 
-// Update the Expires time in the cache.  expires is Unix epoch time in sec
+// pruneSSO removes any SSO instances that are no longer configured
+func (c *Cache) PruneSSO(settings *Settings) {
+	log.Debugf("pruning our cache of outdated SSO instances")
+	for sso := range c.SSO {
+		hasSSO := false
+		for s := range settings.SSO {
+			if s == sso {
+				log.Debugf("keeping %s in cache", sso)
+				hasSSO = true
+				break
+			}
+		}
+		if !hasSSO {
+			log.Debugf("pruning %s from cache", sso)
+			delete(c.SSO, sso)
+		}
+	}
+}
+
+// SetRoleExpires updates the Expires time in the cache.  expires is Unix epoch time in sec
 func (c *Cache) SetRoleExpires(arn string, expires int64) error {
 	flat, err := c.GetRole(arn)
 	if err != nil {
@@ -349,15 +370,15 @@ func (c *Cache) MarkRolesExpired() error {
 }
 
 // returns all tags, but with with spaces replaced with underscores
-func (c *Cache) GetAllTagsSelect() *TagsList {
+func (c *Cache) GetAllTagsSelect() *tags.TagsList {
 	cache := c.GetSSO()
-	tags := cache.Roles.GetAllTags()
-	fixedTags := NewTagsList()
-	for k, values := range *tags {
+	t := cache.Roles.GetAllTags()
+	fixedTags := tags.NewTagsList()
+	for k, values := range *t {
 		key := strings.ReplaceAll(k, " ", "_")
 		for _, v := range values {
 			if key == "History" {
-				v = reformatHistory(v)
+				v = tags.ReformatHistory(v)
 			}
 			fixedTags.Add(key, strings.ReplaceAll(v, " ", "_"))
 		}
@@ -376,7 +397,7 @@ func (c *Cache) GetRoleTagsSelect() *RoleTags {
 		for k, v := range role.Tags {
 			key := strings.ReplaceAll(k, " ", "_")
 			if key == "History" {
-				v = reformatHistory(v)
+				v = tags.ReformatHistory(v)
 			}
 			value := strings.ReplaceAll(v, " ", "_")
 			ret[role.Arn][key] = value
@@ -442,6 +463,7 @@ func fetchSSORole(id int, as *AWSSSO, aInfo <-chan AccountInfo, rInfo chan<- []R
 // and using our SSOCache
 func processSSORoles(roles []RoleInfo, cache *SSOCache, r *Roles) {
 	for _, role := range roles {
+		log.Debugf("Processing %s:%s", role.AccountId, role.RoleName)
 		accountId := role.GetAccountId64()
 
 		if _, ok := r.Accounts[accountId]; !ok {
@@ -527,7 +549,7 @@ func (c *Cache) addSSORoles(r *Roles, as *AWSSSO) error {
 			case roles := <-results:
 				processSSORoles(roles, cache, r)
 				count++ // increment count only when processing results
-				log.Debugf("proccessed %d results", count)
+				log.Debugf("proccessed %d accounts, added %d roles, total %d", count, len(roles), len(r.GetAllRoles()))
 			case <-ticker.C:
 				log.Warnf("Fetching roles for %d accounts, this might take a while...\n", len(accounts)+1)
 				ticker.Stop()

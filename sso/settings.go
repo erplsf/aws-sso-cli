@@ -2,7 +2,7 @@ package sso
 
 /*
  * AWS SSO CLI
- * Copyright (c) 2021-2022 Aaron Turner  <synfinatic at gmail dot com>
+ * Copyright (c) 2021-2023 Aaron Turner  <synfinatic at gmail dot com>
  *
  * This program is free software: you can redistribute it
  * and/or modify it under the terms of the GNU General Public License as
@@ -55,6 +55,8 @@ type Settings struct {
 	JsonStore                 string                   `koanf:"JsonStore" yaml:"JsonStore,omitempty"`
 	CacheRefresh              int64                    `koanf:"CacheRefresh" yaml:"CacheRefresh,omitempty"`
 	Threads                   int                      `koanf:"Threads" yaml:"Threads,omitempty"`
+	MaxBackoff                int                      `koanf:"MaxBackoff" yaml:"MaxBackoff,omitempty"`
+	MaxRetry                  int                      `koanf:"MaxRetry" yaml:"MaxRetry,omitempty"`
 	AutoConfigCheck           bool                     `koanf:"AutoConfigCheck" yaml:"AutoConfigCheck,omitempty"`
 	FirefoxOpenUrlInContainer bool                     `koanf:"FirefoxOpenUrlInContainer" yaml:"FirefoxOpenUrlInContainer,omitempty"` // deprecated
 	UrlAction                 url.Action               `koanf:"UrlAction" yaml:"UrlAction"`
@@ -69,10 +71,12 @@ type Settings struct {
 	HistoryMinutes            int64                    `koanf:"HistoryMinutes" yaml:"HistoryMinutes,omitempty"`
 	ProfileFormat             string                   `koanf:"ProfileFormat" yaml:"ProfileFormat,omitempty"`
 	AccountPrimaryTag         []string                 `koanf:"AccountPrimaryTag" yaml:"AccountPrimaryTag,omitempty"`
+	FirstTag                  string                   `koanf:"FirstTag" yaml:"FirstTag,omitempty"`
 	PromptColors              PromptColors             `koanf:"PromptColors" yaml:"PromptColors,omitempty"` // go-prompt colors
 	ListFields                []string                 `koanf:"ListFields" yaml:"ListFields,omitempty"`
 	ConfigVariables           map[string]interface{}   `koanf:"ConfigVariables" yaml:"ConfigVariables,omitempty"`
 	EnvVarTags                []string                 `koanf:"EnvVarTags" yaml:"EnvVarTags,omitempty"`
+	FullTextSearch            bool                     `koanf:"FullTextSearch" yaml:"FullTextSearch"`
 }
 
 // GetDefaultRegion scans the config settings file to pick the most local DefaultRegion from the tree
@@ -228,7 +232,7 @@ func (s *Settings) applyDeprecations() bool {
 		if err != nil {
 			log.Warnf("Invalid value for ConfigUrlAction: %s", s.ConfigUrlAction)
 		}
-		s.ConfigUrlAction = "" // disable old value so it is omitempty
+		s.ConfigUrlAction = string(url.Undef) // disable old value so it is omitempty
 		change = true
 	}
 
@@ -238,6 +242,25 @@ func (s *Settings) applyDeprecations() bool {
 		s.FirefoxOpenUrlInContainer = false // disable old value so it is omitempty
 		change = true
 	}
+
+	// ExpiresStr => Expires in v1.11.0
+	// AccountIdStr => AccountIdPad v1.11.0
+	// ARN => Arn v1.11.0
+	if len(s.ListFields) > 0 {
+		for i, v := range s.ListFields {
+			switch v {
+			case "ExpiresStr":
+				s.ListFields[i] = "Expires"
+			case "AccountIdStr":
+				s.ListFields[i] = "AccountIdPad"
+			case "ARN":
+				s.ListFields[i] = "Arn"
+			}
+		}
+	}
+
+	// AccountIdStr .AccountId => .AccountIdPad in v1.11.0
+	s.ProfileFormat = strings.ReplaceAll(s.ProfileFormat, "AccountIdStr .AccountId", ".AccountIdPad")
 
 	return change
 }
@@ -384,6 +407,7 @@ type ProfileConfig struct {
 	Arn             string
 	BinaryPath      string
 	ConfigVariables map[string]interface{}
+	DefaultRegion   string
 	Open            string
 	Profile         string
 	Sso             string
@@ -431,6 +455,7 @@ func (s *Settings) GetAllProfiles(open url.Action) (*ProfileMap, error) {
 				Arn:             role.Arn,
 				BinaryPath:      binaryPath,
 				ConfigVariables: s.ConfigVariables,
+				DefaultRegion:   role.DefaultRegion,
 				Open:            string(open),
 				Profile:         profile,
 				Sso:             ssoName,

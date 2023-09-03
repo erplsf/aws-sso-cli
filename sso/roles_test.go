@@ -2,7 +2,7 @@ package sso
 
 /*
  * AWS SSO CLI
- * Copyright (c) 2021-2022 Aaron Turner  <synfinatic at gmail dot com>
+ * Copyright (c) 2021-2023 Aaron Turner  <synfinatic at gmail dot com>
  *
  * This program is free software: you can redistribute it
  * and/or modify it under the terms of the GNU General Public License as
@@ -19,6 +19,7 @@ package sso
  */
 
 import (
+	"math"
 	"os"
 	"strings"
 	"testing"
@@ -108,7 +109,7 @@ func (suite *CacheRolesTestSuite) TestAccountIds() {
 	roles := suite.cache.SSO[suite.cache.ssoName].Roles
 
 	assert.NotEmpty(t, roles.AccountIds())
-	assert.Contains(t, roles.AccountIds(), int64(258234615182))
+	assert.Contains(t, roles.AccountIds(), int64(25823461518))
 	assert.NotContains(t, roles.AccountIds(), int64(2582346))
 }
 
@@ -124,7 +125,7 @@ func (suite *CacheRolesTestSuite) TestGetAccountRoles() {
 	t := suite.T()
 	roles := suite.cache.SSO[suite.cache.ssoName].Roles
 
-	flat := roles.GetAccountRoles(258234615182)
+	flat := roles.GetAccountRoles(25823461518)
 	assert.NotEmpty(t, flat)
 
 	flat = roles.GetAccountRoles(258234615)
@@ -147,7 +148,7 @@ func (suite *CacheRolesTestSuite) TestGetRoleTags() {
 
 	tags := *(roles.GetRoleTags())
 	assert.NotEmpty(t, tags)
-	arn := "arn:aws:iam::258234615182:role/AWSAdministratorAccess"
+	arn := "arn:aws:iam::025823461518:role/AWSAdministratorAccess"
 	assert.Contains(t, tags, arn)
 	assert.NotContains(t, tags, "foobar")
 	assert.Contains(t, tags[arn]["Email"], "control-tower-dev-aws@ourcompany.com")
@@ -161,9 +162,9 @@ func (suite *CacheRolesTestSuite) TestGetRole() {
 	_, err := roles.GetRole(58234615182, "AWSAdministratorAccess")
 	assert.Error(t, err)
 
-	r, err := roles.GetRole(258234615182, "AWSAdministratorAccess")
+	r, err := roles.GetRole(25823461518, "AWSAdministratorAccess")
 	assert.NoError(t, err)
-	assert.Equal(t, int64(258234615182), r.AccountId)
+	assert.Equal(t, int64(25823461518), r.AccountId)
 	assert.Equal(t, "AWSAdministratorAccess", r.RoleName)
 	assert.Equal(t, "", r.Profile)
 	assert.Equal(t, "us-east-1", r.DefaultRegion)
@@ -171,12 +172,16 @@ func (suite *CacheRolesTestSuite) TestGetRole() {
 	p, err := r.ProfileName(suite.settings)
 	assert.NoError(t, err)
 	assert.Equal(t, "OurCompany Control Tower Playground/AWSAdministratorAccess", p)
+
+	r, err = roles.GetRole(707513610766, "AWSPowerUserAccess")
+	assert.NoError(t, err)
+	assert.Equal(t, "arn:aws:iam::707513610766:role/AWSReadOnlyAccess", r.Via)
 }
 
 func (suite *CacheRolesTestSuite) TestProfileName() {
 	t := suite.T()
 	roles := suite.cache.SSO[suite.cache.ssoName].Roles
-	r, err := roles.GetRole(258234615182, "AWSAdministratorAccess")
+	r, err := roles.GetRole(25823461518, "AWSAdministratorAccess")
 	assert.NoError(t, err)
 
 	p, err := r.ProfileName(suite.settings)
@@ -233,13 +238,54 @@ func (suite *CacheRolesTestSuite) TestGetEnvVarTags() {
 	assert.Equal(t, x, flat.GetEnvVarTags(&settings))
 }
 
+func TestAWSRoleFlatGetSortableField(t *testing.T) {
+	flat := AWSRoleFlat{
+		RoleName:     "foobar",
+		AccountId:    12344553243,
+		AccountIdPad: "012344553243",
+		ExpiresEpoch: 0,
+		Expires:      "Expired",
+	}
+
+	f, err := flat.GetSortableField("RoleName")
+	assert.NoError(t, err)
+	assert.Equal(t, Sval, f.Type)
+	assert.Equal(t, "foobar", f.Sval)
+
+	f, err = flat.GetSortableField("AccountId")
+	assert.NoError(t, err)
+	assert.Equal(t, Ival, f.Type)
+	assert.Equal(t, int64(12344553243), f.Ival)
+
+	f, err = flat.GetSortableField("AccountIdPad")
+	assert.NoError(t, err)
+	assert.Equal(t, Ival, f.Type)
+	assert.Equal(t, int64(12344553243), f.Ival)
+
+	f, err = flat.GetSortableField("Expires")
+	assert.NoError(t, err)
+	assert.Equal(t, Ival, f.Type)
+	assert.Equal(t, int64(math.Pow(2, 62)), f.Ival)
+
+	f, err = flat.GetSortableField("ExpiresEpoch")
+	assert.NoError(t, err)
+	assert.Equal(t, Ival, f.Type)
+	assert.Equal(t, int64(math.Pow(2, 62)), f.Ival)
+
+	f, err = flat.GetSortableField("Tags")
+	assert.Error(t, err)
+
+	f, err = flat.GetSortableField("Role")
+	assert.Error(t, err)
+}
+
 func TestAWSRoleFlatGetHeader(t *testing.T) {
 	f := AWSRoleFlat{}
-	x, err := f.GetHeader("ExpiresStr")
+	x, err := f.GetHeader("Expires")
 	assert.NoError(t, err)
 	assert.Equal(t, "Expires", x)
 
-	x, err = f.GetHeader("Expires")
+	x, err = f.GetHeader("ExpiresEpoch")
 	assert.NoError(t, err)
 	assert.Equal(t, "ExpiresEpoch", x)
 
@@ -254,17 +300,17 @@ func TestAWSRoleFlatGetHeader(t *testing.T) {
 
 func TestAWSRoleFlatExpired(t *testing.T) {
 	f := &AWSRoleFlat{
-		Expires: 0,
+		ExpiresEpoch: 0,
 	}
 	assert.True(t, f.IsExpired())
 
 	f = &AWSRoleFlat{
-		Expires: 12345455,
+		ExpiresEpoch: 12345455,
 	}
 	assert.True(t, f.IsExpired())
 
 	f = &AWSRoleFlat{
-		Expires: time.Now().Add(time.Minute * 5).Unix(),
+		ExpiresEpoch: time.Now().Add(time.Minute * 5).Unix(),
 	}
 	assert.False(t, f.IsExpired())
 }
@@ -277,6 +323,22 @@ func TestAWSRoleFlatProfileName(t *testing.T) {
 	f := &AWSRoleFlat{}
 	_, err := f.ProfileName(s)
 	assert.Error(t, err)
+}
+
+func TestRoleFlatExpiresIn(t *testing.T) {
+	f := &AWSRoleFlat{
+		ExpiresEpoch: 0,
+	}
+	x, err := f.ExpiresIn()
+	assert.NoError(t, err)
+	assert.Equal(t, "Expired", x)
+
+	f = &AWSRoleFlat{
+		ExpiresEpoch: time.Now().Add(time.Minute * 5).Unix(),
+	}
+	x, err = f.ExpiresIn()
+	assert.NoError(t, err)
+	assert.Equal(t, "4m", x)
 }
 
 // profile functions
@@ -301,10 +363,15 @@ func TestStringsJoin(t *testing.T) {
 	assert.Equal(t, "a.b.c", stringsJoin(".", "a", "b", "c"))
 }
 
+func TestAccountIdToStr(t *testing.T) {
+	assert.Equal(t, "000000555555", accountIdToStr(555555))
+}
+
 func TestAWSRoleFlatHasPrefix(t *testing.T) {
 	f := &AWSRoleFlat{
 		Id:            10,
 		AccountId:     555555,
+		AccountIdPad:  "000000555555",
 		AccountName:   "testing account",
 		AccountAlias:  "testing",
 		EmailAddress:  "testing+aws@company.com",
@@ -320,10 +387,10 @@ func TestAWSRoleFlatHasPrefix(t *testing.T) {
 
 	// invalid key
 	invalid := map[string]string{
-		"X":          "test",
-		"Expires":    "foo",
-		"ExpiresStr": "bar",
-		"Tags":       "baz",
+		"X":            "test",
+		"Expires":      "foo",
+		"ExpiresEpoch": "bar",
+		"Tags":         "baz",
 	}
 	for k, v := range invalid {
 		_, err := f.HasPrefix(k, v)
@@ -333,6 +400,7 @@ func TestAWSRoleFlatHasPrefix(t *testing.T) {
 	valid := map[string]string{
 		"Id":            "1",
 		"AccountId":     "55",
+		"AccountIdPad":  "00000055",
 		"AccountName":   "testing",
 		"AccountAlias":  "test",
 		"EmailAddress":  "testing+aws@company.",
@@ -411,4 +479,15 @@ func (suite *CacheRolesTestSuite) TestCheckProfiles() {
 	r = tests["Valid3"]
 	err = r.checkProfiles(&badSettings)
 	assert.Error(t, err)
+}
+
+func (suite *CacheRolesTestSuite) TestGetRoleChain() {
+	t := suite.T()
+
+	roles := suite.cache.SSO[suite.cache.ssoName].Roles
+	flat := roles.GetRoleChain(707513610766, "AWSPowerUserAccess")
+	assert.Equal(t, 2, len(flat))
+
+	assert.Equal(t, "arn:aws:iam::707513610766:role/AWSReadOnlyAccess", flat[0].Arn)
+	assert.Equal(t, "arn:aws:iam::707513610766:role/AWSPowerUserAccess", flat[1].Arn)
 }

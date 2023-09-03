@@ -2,7 +2,7 @@ package main
 
 /*
  * AWS SSO CLI
- * Copyright (c) 2021-2022 Aaron Turner  <synfinatic at gmail dot com>
+ * Copyright (c) 2021-2023 Aaron Turner  <synfinatic at gmail dot com>
  *
  * This program is free software: you can redistribute it
  * and/or modify it under the terms of the GNU General Public License as
@@ -31,7 +31,7 @@ import (
 	// "github.com/davecgh/go-spew/spew"
 	//	"github.com/manifoldco/promptui"
 	"github.com/manifoldco/promptui"
-	"github.com/synfinatic/aws-sso-cli/internal/awsconfig"
+	"github.com/synfinatic/aws-sso-cli/internal/awscreds"
 	"github.com/synfinatic/aws-sso-cli/internal/storage"
 	"github.com/synfinatic/aws-sso-cli/internal/utils"
 	"github.com/synfinatic/aws-sso-cli/sso"
@@ -129,7 +129,7 @@ func (cc *StaticAddCmd) Run(ctx *RunContext) error {
 	}
 
 	// check if key is valid
-	p := awsconfig.Profile{
+	p := awscreds.Profile{
 		FromConfig:      false,
 		Name:            profile,
 		AccessKeyId:     accessKey,
@@ -233,7 +233,7 @@ type StaticImportCmd struct{}
 
 // StaticImportCmd imports static credentials into the SecureStore
 func (cc *StaticImportCmd) Run(ctx *RunContext) error {
-	a, err := awsconfig.NewAwsConfig(awsconfig.CONFIG_FILE, awsconfig.CREDENTIALS_FILE)
+	a, err := awscreds.NewAwsConfig(awscreds.CONFIG_FILE, awscreds.CREDENTIALS_FILE)
 	if err != nil {
 		return err
 	}

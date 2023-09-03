@@ -2,7 +2,7 @@ package sso
 
 /*
  * AWS SSO CLI
- * Copyright (c) 2021-2022 Aaron Turner  <synfinatic at gmail dot com>
+ * Copyright (c) 2021-2023 Aaron Turner  <synfinatic at gmail dot com>
  *
  * This program is free software: you can redistribute it
  * and/or modify it under the terms of the GNU General Public License as
@@ -22,6 +22,8 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/synfinatic/aws-sso-cli/internal/tags"
+	"github.com/synfinatic/aws-sso-cli/internal/url"
 	"github.com/synfinatic/aws-sso-cli/internal/utils"
 )
 
@@ -32,6 +34,13 @@ type SSOConfig struct {
 	StartUrl      string                 `koanf:"StartUrl" yaml:"StartUrl"`
 	Accounts      map[string]*SSOAccount `koanf:"Accounts" yaml:"Accounts,omitempty"` // key must be a string to avoid parse errors!
 	DefaultRegion string                 `koanf:"DefaultRegion" yaml:"DefaultRegion,omitempty"`
+
+	// overrides for this SSO Instance
+	AuthUrlAction url.Action `koanf:"AuthUrlAction" yaml:"AuthUrlAction,omitempty"`
+
+	// passed to AWSSSO from our Settings
+	MaxBackoff int `koanf:"-" yaml:"-"`
+	MaxRetry   int `koanf:"-" yaml:"-"`
 }
 
 type SSOAccount struct {
@@ -56,6 +65,13 @@ type SSORole struct {
 // Refresh should be called any time you load the SSOConfig into memory or add a role
 // to update the Role -> Account references
 func (c *SSOConfig) Refresh(s *Settings) {
+	c.MaxBackoff = s.MaxBackoff
+	c.MaxRetry = s.MaxRetry
+
+	if c.AuthUrlAction == url.Undef {
+		c.AuthUrlAction = s.UrlAction
+	}
+
 	for accountId, a := range c.Accounts {
 		a.SetParentConfig(c)
 		for roleName, r := range a.Roles {
@@ -83,8 +99,8 @@ func (s *SSOConfig) GetRoles() []*SSORole {
 }
 
 // returns all of the available account & role tags for our SSO Provider
-func (s *SSOConfig) GetAllTags() *TagsList {
-	tags := NewTagsList()
+func (s *SSOConfig) GetAllTags() *tags.TagsList {
+	tags := tags.NewTagsList()
 
 	for _, accountInfo := range s.Accounts {
 		/*

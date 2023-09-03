@@ -2,7 +2,7 @@ package url
 
 /*
  * AWS SSO CLI
- * Copyright (c) 2021-2022 Aaron Turner  <synfinatic at gmail dot com>
+ * Copyright (c) 2021-2023 Aaron Turner  <synfinatic at gmail dot com>
  *
  * This program is free software: you can redistribute it
  * and/or modify it under the terms of the GNU General Public License as
@@ -239,4 +239,25 @@ func TestNewConfigProfilesAction(t *testing.T) {
 	a, err = NewConfigProfilesAction("invalid")
 	assert.Error(t, err)
 	assert.Equal(t, a, ConfigProfilesAction("open"), a)
+}
+
+func TestSSOAuthAction(t *testing.T) {
+	// no change
+	a, _ := NewAction("clip")
+	assert.Equal(t, a, SSOAuthAction(Clip))
+	a, _ = NewAction("open")
+	assert.Equal(t, a, SSOAuthAction(Open))
+	a, _ = NewAction("")
+	assert.Equal(t, a, SSOAuthAction(Undef))
+	a, _ = NewAction("print")
+	assert.Equal(t, a, SSOAuthAction(Print))
+	a, _ = NewAction("printurl")
+	assert.Equal(t, a, SSOAuthAction(PrintUrl))
+	a, _ = NewAction("exec")
+	assert.Equal(t, a, SSOAuthAction(Exec))
+
+	// change to open
+	a, _ = NewAction("open")
+	assert.Equal(t, a, SSOAuthAction(GrantedContainer))
+	assert.Equal(t, a, SSOAuthAction(OpenUrlContainer))
 }

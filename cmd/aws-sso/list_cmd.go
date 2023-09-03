@@ -2,7 +2,7 @@ package main
 
 /*
  * AWS SSO CLI
- * Copyright (c) 2021-2022 Aaron Turner  <synfinatic at gmail dot com>
+ * Copyright (c) 2021-2023 Aaron Turner  <synfinatic at gmail dot com>
  *
  * This program is free software: you can redistribute it
  * and/or modify it under the terms of the GNU General Public License as
@@ -32,11 +32,16 @@ import (
 )
 
 type ListCmd struct {
-	ListFields bool     `kong:"short='f',help='List available fields',xor='fields'"`
-	CSV        bool     `kong:"help='Generate CSV instead of a table',xor='fields'"`
+	ListFields bool     `kong:"short='f',help='List available fields',xor='listfields'"`
+	CSV        bool     `kong:"help='Generate CSV instead of a table',xor='listfields'"`
 	Prefix     string   `kong:"short='P',help='Filter based on the <FieldName>=<Prefix>'"`
-	Fields     []string `kong:"optional,arg,help='Fields to display',env='AWS_SSO_FIELDS',predictor='fieldList',xor='fields'"`
+	Fields     []string `kong:"optional,arg,help='Fields to display',env='AWS_SSO_FIELDS',predictor='fieldList',xor='listfields'"`
+	Sort       string   `kong:"short='s',help='Sort results by the <FieldName>',default='AccountId',env='AWS_SSO_FIELD_SORT',predictor='fieldList'"`
+	Reverse    bool     `kong:"help='Reverse sort results',env='AWS_SSO_FIELD_SORT_REVERSE'"`
 }
+
+// Actually used in main.go, but definied here for locality
+var DEFAULT_LIST_FIELDS []string = []string{"AccountIdPad", "AccountAlias", "RoleName", "Profile", "Expires"}
 
 // what should this actually do?
 func (cc *ListCmd) Run(ctx *RunContext) error {
@@ -81,7 +86,13 @@ func (cc *ListCmd) Run(ctx *RunContext) error {
 		fields = ctx.Cli.List.Fields
 	}
 
-	return printRoles(ctx, fields, ctx.Cli.List.CSV, prefixSearch)
+	for _, f := range fields {
+		if !predictor.SupportedListField(f) {
+			return fmt.Errorf("Unsupported field: '%s'", f)
+		}
+	}
+
+	return printRoles(ctx, fields, ctx.Cli.List.CSV, prefixSearch, ctx.Cli.List.Sort, ctx.Cli.List.Reverse)
 }
 
 // DefaultCmd has no args, and just prints the default fields and exists because
@@ -102,73 +113,89 @@ func (cc *DefaultCmd) Run(ctx *RunContext) error {
 		}
 	}
 
-	return printRoles(ctx, ctx.Settings.ListFields, false, []string{})
+	return printRoles(ctx, ctx.Settings.ListFields, false, []string{}, "AccountId", false)
 }
 
 // Print all our roles
-func printRoles(ctx *RunContext, fields []string, csv bool, prefixSearch []string) error {
+func printRoles(ctx *RunContext, fields []string, csv bool, prefixSearch []string, sortby string, reverse bool) error {
 	var err error
 	roles := ctx.Settings.Cache.GetSSO().Roles
 	tr := []gotable.TableStruct{}
 	idx := 0
 
-	// print in AccountId order
-	accounts := []int64{}
-	for account := range roles.Accounts {
-		accounts = append(accounts, account)
-	}
-	sort.Slice(accounts, func(i, j int) bool { return accounts[i] < accounts[j] })
-
-	for _, account := range accounts {
-		// print roles in order
-		roleNames := []string{}
-		for _, roleFlat := range roles.GetAccountRoles(account) {
-			roleNames = append(roleNames, roleFlat.RoleName)
-		}
-		sort.Strings(roleNames)
-
-		for _, roleName := range roleNames {
-			roleFlat, _ := roles.GetRole(account, roleName)
-			if !roleFlat.IsExpired() {
-				if exp, err := utils.TimeRemain(roleFlat.Expires, true); err == nil {
-					roleFlat.ExpiresStr = exp
-				}
-			}
-			// update Profile
-			p, err := roleFlat.ProfileName(ctx.Settings)
-			if err == nil {
-				roleFlat.Profile = p
-			}
-
-			if len(prefixSearch) > 0 {
-				match, err := roleFlat.HasPrefix(prefixSearch[0], prefixSearch[1])
-				if err != nil {
-					return err
-				}
-
-				if !match {
-					// skip because not a match
-					continue
-				}
-			}
-
-			roleFlat.Id = idx
-			idx += 1
-			tr = append(tr, *roleFlat)
+	allRoles := roles.GetAllRoles()
+	for _, roleFlat := range allRoles {
+		// this doesn't happen in GetAllRoles()
+		p, err := roleFlat.ProfileName(ctx.Settings)
+		if err == nil {
+			roleFlat.Profile = p
 		}
 	}
 
-	// Determine when our AWS SSO session expires
-	// list doesn't call doAuth() so we have to initialize our global *AwsSSO manually
-	s, err := ctx.Settings.GetSelectedSSO(ctx.Cli.SSO)
-	if err != nil {
-		log.Fatalf("%s", err.Error())
+	var sortError error
+	sort.SliceStable(allRoles, func(i, j int) bool {
+		a, err := allRoles[i].GetSortableField(sortby)
+		if err != nil {
+			sortError = fmt.Errorf("Invalid --sort: %s", err.Error())
+			return false
+		}
+		b, _ := allRoles[j].GetSortableField(sortby)
+
+		switch a.Type {
+		case sso.Sval:
+			if !reverse {
+				return a.Sval < b.Sval
+			} else {
+				return a.Sval > b.Sval
+			}
+
+		case sso.Ival:
+			if !reverse {
+				return a.Ival < b.Ival
+			} else {
+				return a.Ival > b.Ival
+			}
+
+		default:
+			sortError = fmt.Errorf("Unable to sort by field: %s", sortby)
+			return false
+		}
+	})
+
+	if sortError != nil {
+		return sortError
 	}
-	AwsSSO = sso.NewAWSSSO(s, &ctx.Store)
+
+	for _, roleFlat := range allRoles {
+		if len(prefixSearch) > 0 {
+			match, err := roleFlat.HasPrefix(prefixSearch[0], prefixSearch[1])
+			if err != nil {
+				return err
+			}
+
+			if !match {
+				// skip because not a match
+				continue
+			}
+		}
+
+		roleFlat.Id = idx
+		idx += 1
+		tr = append(tr, *roleFlat)
+	}
 
 	if csv {
 		err = gotable.GenerateCSV(tr, fields)
 	} else {
+		// Determine when our AWS SSO session expires
+		// list doesn't call doAuth() so we have to initialize our global *AwsSSO manually
+		var s *sso.SSOConfig
+		s, err = ctx.Settings.GetSelectedSSO(ctx.Cli.SSO)
+		if err != nil {
+			log.Fatalf("%s", err.Error())
+		}
+		AwsSSO = sso.NewAWSSSO(s, &ctx.Store)
+
 		expires := ""
 		ctr := storage.CreateTokenResponse{}
 		if err := ctx.Store.GetCreateTokenResponse(AwsSSO.StoreKey(), &ctr); err != nil {
@@ -177,13 +204,14 @@ func printRoles(ctx *RunContext, fields []string, csv bool, prefixSearch []strin
 			if exp, err := utils.TimeRemain(ctr.ExpiresAt, true); err != nil {
 				log.Errorf("Unable to determine time remain for %d: %s", ctr.ExpiresAt, err)
 			} else {
-				expires = fmt.Sprintf(" [Expires in: %s]", exp)
+				expires = fmt.Sprintf(" [Expires in: %s]", strings.TrimSpace(exp))
 			}
 		}
 		fmt.Printf("List of AWS roles for SSO Instance: %s%s\n\n", ctx.Settings.DefaultSSO, expires)
 
 		err = gotable.GenerateTable(tr, fields)
 	}
+
 	if err == nil {
 		fmt.Printf("\n")
 	}

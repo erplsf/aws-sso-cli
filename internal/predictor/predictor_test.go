@@ -2,7 +2,7 @@ package predictor
 
 /*
  * AWS SSO CLI
- * Copyright (c) 2021-2022 Aaron Turner  <synfinatic at gmail dot com>
+ * Copyright (c) 2021-2023 Aaron Turner  <synfinatic at gmail dot com>
  *
  * This program is free software: you can redistribute it
  * and/or modify it under the terms of the GNU General Public License as
@@ -70,4 +70,9 @@ func TestCompletions(t *testing.T) {
 	c = p.SsoComplete()
 	assert.NotNil(t, c)
 	assert.Equal(t, 3, len(c.Predict(args)))
+}
+
+func TestSupportedListField(t *testing.T) {
+	assert.True(t, SupportedListField("AccountIdPad"))
+	assert.False(t, SupportedListField("Account"))
 }

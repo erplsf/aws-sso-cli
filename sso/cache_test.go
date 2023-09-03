@@ -2,7 +2,7 @@ package sso
 
 /*
  * AWS SSO CLI
- * Copyright (c) 2021-2022 Aaron Turner  <synfinatic at gmail dot com>
+ * Copyright (c) 2021-2023 Aaron Turner  <synfinatic at gmail dot com>
  *
  * This program is free software: you can redistribute it
  * and/or modify it under the terms of the GNU General Public License as
@@ -335,6 +335,13 @@ func (suite *CacheTestSuite) TestExpired() {
 	assert.Error(t, suite.cache.Expired(&s))
 	s.settings.CacheRefresh = 0
 	assert.NoError(t, suite.cache.Expired(&s))
+
+	// invalid version
+	c := &Cache{
+		Version: 1, // invalid
+	}
+	err := c.Expired(&s)
+	assert.Error(t, err)
 }
 
 func (suite *CacheTestSuite) TestGetRole() {
@@ -384,7 +391,7 @@ func (suite *CacheTestSuite) TestGetAllRoles() {
 	assert.Equal(t, 4, len(aroles))
 	aroles = cache.Roles.GetAccountRoles(502470824893)
 	assert.Equal(t, 4, len(aroles))
-	aroles = cache.Roles.GetAccountRoles(258234615182)
+	aroles = cache.Roles.GetAccountRoles(25823461518)
 	assert.Equal(t, 7, len(aroles))
 }
 
@@ -393,9 +400,9 @@ func (suite *CacheTestSuite) TestGetAllTags() {
 	cache := suite.cache.GetSSO()
 
 	tl := cache.Roles.GetAllTags()
-	assert.Equal(t, 9, len(*tl))
+	assert.Equal(t, 10, len(*tl))
 	tl = suite.cache.GetAllTagsSelect()
-	assert.Equal(t, 9, len(*tl))
+	assert.Equal(t, 10, len(*tl))
 }
 
 func (suite *CacheTestSuite) TestGetRoleTags() {
@@ -490,7 +497,7 @@ func (suite *CacheTestSuite) TestSetRoleExpires() {
 
 	flat, err := suite.cache.GetRole(TEST_ROLE_ARN)
 	assert.NoError(t, err)
-	assert.Equal(t, int64(12344553243), flat.Expires)
+	assert.Equal(t, int64(12344553243), flat.ExpiresEpoch)
 
 	err = suite.cache.SetRoleExpires(INVALID_ROLE_ARN, 12344553243)
 	assert.Error(t, err)
@@ -538,4 +545,33 @@ func (suite *CacheTestSuite) TestProcessSSORoles() {
 	assert.Equal(t, "123456789012", r.Accounts[123456789012].Roles["testing"].Tags["AccountID"])
 	assert.Equal(t, "testing@domain.com", r.Accounts[123456789012].Roles["testing"].Tags["Email"])
 	assert.Equal(t, "testing", r.Accounts[123456789012].Roles["testing"].Tags["Role"])
+}
+
+func (suite *CacheTestSuite) TestPruneSSO() {
+	t := suite.T()
+
+	s := &Settings{
+		SSO: map[string]*SSOConfig{
+			"Primary": {},
+		},
+	}
+
+	c := &Cache{
+		SSO: map[string]*SSOCache{
+			"Primary": {},
+			"Invalid": {},
+		},
+	}
+
+	c.PruneSSO(s)
+	assert.Contains(t, c.SSO, "Primary")
+	assert.NotContains(t, c.SSO, "Invalid")
+}
+
+func TestOpenCacheFailure(t *testing.T) {
+	s := &Settings{}
+	c, err := OpenCache("/dev/null", s)
+	assert.Error(t, err)
+	assert.Equal(t, int64(0), c.ConfigCreatedAt)
+	assert.Equal(t, int64(1), c.Version)
 }

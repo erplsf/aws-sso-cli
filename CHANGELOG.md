@@ -1,10 +1,122 @@
 # AWS SSO CLI Changelog
 
-## Unreleased
+## [v1.13.1] - 2023-08-28
+
+### Bugs
+
+ * Fix fetching creds from ECS Server #557
+ * ECS Server now includes `RoleArn` in output #561
+ * Fix selection of default browser in advanced guided setup #563
+
+### Changes 
+
+ * ECS Server API is now more RESTful and fully document the API
+ * Default profile `AWS_CONTAINER_CREDENTIALS_FULL_URI` is now `http://localhost:4144/`
+ * Slotted profile `AWS_CONTAINER_CREDENTIALS_FULL_URI` is now `http://localhost:4144/slot/<profile>`
+ * `aws-sso ecs list` and `aws-sso ecs profile` now return the same output format
+ * `make tags` now uses [gotags](https://github.com/jstemmer/gotags)
+
+## [v1.13.0] - 2023-08-21
+
+### Bugs
+
+ * No longer crash during guided setup if user presses `<Del>` #531
+ * No longer error out on simple input errors during guided setup
+ * Do not create invalid `maxretry` and `maxbackoff` in SSO Instance during config #536
+ * Ctrl-C now exits the guided setup
+ * Running `aws-sso config` with a missing config file no longer prompts you to back it up #537
+ * Document ugly fact that `AccountAlias` is really the AWS Account Name #534
+ * `ecs load` now updates history #519
+ * ECS Server now generates errors per [AWS docs](https://pkg.go.dev/github.com/aws/aws-sdk-go-v2/credentials/endpointcreds)
+
+### Changes
+
+ * Guided setup is now more simple unless user provides the `--advanced` flag #530
+ * Guided setup now strips leading and trailing spaces for string input
+ * Revert #491 so SSO auth uses Firefox containers
+
+### New Features
+
+ * Added [logout](docs/commands.md#logout) command which invalidates the browser
+    session and all credentials #526
+ * `AutoConfigCheck` now honors the `$AWS_CONFIG_FILE` variable #540
+ * `config-profiles` now supports the `--aws-config` flag
+ * Added [ecs list](docs/ecs-server.md#listing-profiles) command to list
+    profiles in named slots #517
+ * Add [AuthUrlAction](docs/config.md#authurlaction) to override [UrlAction](docs/config.md#urlaction)
+    during SSO Authentication. #524
+
+## [v1.12.0] - 2023-08-12
+
+### Bugs
+
+ * Prevent crashing with large number of accounts #520
+ * `console` command now always honors the `--duration` flag
+
+### Changes
+
+ * [CacheRefresh](docs/config.md#CacheRefresh) now defaults to 168 hours (7 days)
+ * [FullTextSearch](docs/config.md#FullTextSearch) is enabled by default for interactive `list` mode.
+ * [MaxRetry](docs/config.md#MaxRetry) defaults to 10
+ * [MaxBackoff](docs/config.md#MaxBackoff) defaults to 5
+
+### New Features
+
+ * Add ECS Server mode to support `$AWS_CONTAINER_CREDENTIALS_FULL_URI` #398
+ * Add full-text search for interactive `list` mode #504
+ * Improve performance refreshing the list of accounts & roles
+ * Add `MaxRetry` and `MaxBackoff` config options
+
+## [v1.11.0] - 2023-08-02
+
+### Bugs
+
+ * Fix `list --sort` bugs #506
+ * Fix `process --profile` flag not working
+ * Fix `AccountId` still not zero padding in `list` output #503
+ * Invalid fields passed to `list` command are now detected instead of an empty column
+
+### Changes
+
+ * No longer show usage on error
+ * Add `AccountIdPad` as a new field name for the `list` command to pad with zeros
+    as appropriate.
+ * Change default `ProfileFormat` to `{{ .AccountIdPad }}:{{ .RoleName }}`
+ * `ExpiresStr` field name is now `Expires` to match the header
+ * `Expires` is now `ExpiresEpoch` as both field name and header
+ * `ARN` header is now `Arn` to match the field name
+ * Add missing AWS Regions & SSO Regions #507
+
+### Deprecated
+
+ * `AccountIdStr` function for `ProfileFormat`.  Use the `.AccountIdPad` variable instead.
+ * `AccountIdStr` field is replaced by `AccountIdPad` in `list` command and `ListFields` in config.yaml
+ * `ARN` field is replaced by `Arn` in `list` command and `ListFields` in config.yaml
+ * `ExpiresStr` field is replaced by `Expires` in `list` command and `ListFields` in config.yaml
+
+## [v1.10.0] - 2023-07-30
 
 ### Bugs
 
  * Fix fish auto-complete helper #472
+ * Fix issue where we were not appropriately flushing the roles cache #479
+ * Creds with less than 1min remaining now indicate so via `< 1m` rather than empty string
+ * We now consistently use `RoleName` as both input and output for the `list` command
+
+### Changes
+
+ * Authentication via your SSO provider no longer uses a Firefox container #486
+ * Bump to Go v1.19
+ * Bump to golangci-lint v1.52.2
+ * AccountId in the `list` command output are now presented with a leading zero(s)
+ * Expired IAM credentials are now explictily marked instead of an empty string
+
+### New Features
+
+ * Profiles in ~/.aws/config now include the `region = XXX` option #481
+ * Add `FirstTag` support in the config for placing a tag at the top of the select list #445
+ * Support `eval` command in Windows PowerShell via Invoke-Expression #188
+ * Add support for `--sort` and `--reverse` flags for the `list` command #466
 
 ## [v1.9.10] - 2023-02-27
 
@@ -474,7 +586,12 @@
 
 Initial release
 
-[Unreleased]: https://github.com/synfinatic/aws-sso-cli/compare/v1.9.10...main
+[Unreleased]: https://github.com/synfinatic/aws-sso-cli/compare/v1.13.1...main
+[v1.13.1]: https://github.com/synfinatic/aws-sso-cli/releases/tag/v1.13.0
+[v1.13.0]: https://github.com/synfinatic/aws-sso-cli/releases/tag/v1.12.0
+[v1.12.0]: https://github.com/synfinatic/aws-sso-cli/releases/tag/v1.11.0
+[v1.11.0]: https://github.com/synfinatic/aws-sso-cli/releases/tag/v1.10.0
+[v1.10.0]: https://github.com/synfinatic/aws-sso-cli/releases/tag/v1.9.10
 [v1.9.10]: https://github.com/synfinatic/aws-sso-cli/releases/tag/v1.9.9
 [v1.9.9]: https://github.com/synfinatic/aws-sso-cli/releases/tag/v1.9.9
 [v1.9.8]: https://github.com/synfinatic/aws-sso-cli/releases/tag/v1.9.8

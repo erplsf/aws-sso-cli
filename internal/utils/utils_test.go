@@ -2,7 +2,7 @@ package utils
 
 /*
  * AWS SSO CLI
- * Copyright (c) 2021-2022 Aaron Turner  <synfinatic at gmail dot com>
+ * Copyright (c) 2021-2023 Aaron Turner  <synfinatic at gmail dot com>
  *
  * This program is free software: you can redistribute it
  * and/or modify it under the terms of the GNU General Public License as
@@ -211,25 +211,38 @@ func (suite *UtilsTestSuite) TestTimeRemain() {
 	assert.NoError(t, e)
 	assert.Equal(t, "Expired", x)
 
-	d, _ := time.ParseDuration("5m")
+	d, _ := time.ParseDuration("5m1s")
 	future := time.Now().Add(d)
 	x, e = TimeRemain(future.Unix(), true)
 	assert.NoError(t, e)
-	assert.Equal(t, "   5m", x)
+	assert.Equal(t, "     5m", x)
 
 	x, e = TimeRemain(future.Unix(), false)
 	assert.NoError(t, e)
 	assert.Equal(t, "5m", x)
 
-	d, _ = time.ParseDuration("5h5m")
+	d, _ = time.ParseDuration("5h5m1s")
 	future = time.Now().Add(d)
 	x, e = TimeRemain(future.Unix(), true)
 	assert.NoError(t, e)
-	assert.Equal(t, "5h 5m", x)
+	assert.Equal(t, " 5h  5m", x)
 
 	x, e = TimeRemain(future.Unix(), false)
 	assert.NoError(t, e)
 	assert.Equal(t, "5h5m", x)
+
+	// truncate down to < 1min
+	d, _ = time.ParseDuration("55s")
+	future = time.Now().Add(d)
+	x, e = TimeRemain(future.Unix(), true)
+	assert.NoError(t, e)
+	assert.Equal(t, "   < 1m", x)
+
+	d, _ = time.ParseDuration("25s")
+	future = time.Now().Add(d)
+	x, e = TimeRemain(future.Unix(), true)
+	assert.NoError(t, e)
+	assert.Equal(t, "   < 1m", x)
 }
 
 func TestStrListContains(t *testing.T) {

@@ -2,7 +2,7 @@ package main
 
 /*
  * AWS SSO CLI
- * Copyright (c) 2021-2022 Aaron Turner  <synfinatic at gmail dot com>
+ * Copyright (c) 2021-2023 Aaron Turner  <synfinatic at gmail dot com>
  *
  * This program is free software: you can redistribute it
  * and/or modify it under the terms of the GNU General Public License as
@@ -27,10 +27,14 @@ import (
 	"github.com/posener/complete"
 	// "github.com/davecgh/go-spew/spew"
 	"github.com/sirupsen/logrus"
-	"github.com/synfinatic/aws-sso-cli/internal/awsconfig"
+	"github.com/synfinatic/aws-sso-cli/internal/awscreds"
+	"github.com/synfinatic/aws-sso-cli/internal/ecs"
+	"github.com/synfinatic/aws-sso-cli/internal/ecs/client"
+	"github.com/synfinatic/aws-sso-cli/internal/ecs/server"
 	"github.com/synfinatic/aws-sso-cli/internal/helper"
 	"github.com/synfinatic/aws-sso-cli/internal/predictor"
 	"github.com/synfinatic/aws-sso-cli/internal/storage"
+	"github.com/synfinatic/aws-sso-cli/internal/tags"
 	"github.com/synfinatic/aws-sso-cli/internal/url"
 	"github.com/synfinatic/aws-sso-cli/internal/utils"
 	"github.com/synfinatic/aws-sso-cli/sso"
@@ -45,6 +49,8 @@ var CommitID = "unknown"
 var Delta = ""
 var VALID_LOG_LEVELS = []string{"error", "warn", "info", "debug", "trace"}
 
+var AwsSSO *sso.AWSSSO // global
+
 type RunContext struct {
 	Kctx     *kong.Context
 	Cli      *CLI
@@ -58,7 +64,7 @@ const (
 	JSON_STORE_FILE     = CONFIG_DIR + "/store.json"
 	INSECURE_CACHE_FILE = CONFIG_DIR + "/cache.json"
 	DEFAULT_STORE       = "file"
-	COPYRIGHT_YEAR      = "2021-2022"
+	COPYRIGHT_YEAR      = "2021-2023"
 )
 
 var DEFAULT_CONFIG map[string]interface{} = map[string]interface{}{
@@ -81,7 +87,7 @@ var DEFAULT_CONFIG map[string]interface{} = map[string]interface{}{
 	"DefaultRegion":                             "us-east-1",
 	"HistoryLimit":                              10,
 	"HistoryMinutes":                            1440, // 24hrs
-	"ListFields":                                []string{"AccountId", "AccountAlias", "RoleName", "Profile", "ExpiresStr"},
+	"ListFields":                                DEFAULT_LIST_FIELDS,
 	"ConsoleDuration":                           60,
 	"UrlAction":                                 "open",
 	"ConfigProfilesUrlAction":                   "open",
@@ -89,9 +95,12 @@ var DEFAULT_CONFIG map[string]interface{} = map[string]interface{}{
 	"DefaultSSO":                                "Default",
 	"FirefoxOpenUrlInContainer":                 false,
 	"AutoConfigCheck":                           false,
-	"ProfileFormat":                             `{{ AccountIdStr .AccountId }}:{{ .RoleName }}`,
-	"CacheRefresh":                              24, // in hours
+	"FullTextSearch":                            true,
+	"ProfileFormat":                             sso.DEFAULT_PROFILE_TEMPLATE,
+	"CacheRefresh":                              168, // 7 days in hours
 	"Threads":                                   5,
+	"MaxBackoff":                                5, // seconds
+	"MaxRetry":                                  10,
 }
 
 type CLI struct {
@@ -114,6 +123,7 @@ type CLI struct {
 	Exec           ExecCmd           `kong:"cmd,help='Execute command using specified IAM role in a new shell'"`
 	Flush          FlushCmd          `kong:"cmd,help='Flush AWS SSO/STS credentials from cache'"`
 	List           ListCmd           `kong:"cmd,help='List all accounts / roles (default command)'"`
+	Logout         LogoutCmd         `kong:"cmd,help='Logout in browser and invalidate all credentials'"`
 	Process        ProcessCmd        `kong:"cmd,help='Generate JSON for credential_process in ~/.aws/config'"`
 	Static         StaticCmd         `kong:"cmd,help='Manage static AWS API credentials',hidden"`
 	Tags           TagsCmd           `kong:"cmd,help='List tags'"`
@@ -121,8 +131,8 @@ type CLI struct {
 	Completions    CompleteCmd       `kong:"cmd,help='Manage shell completions'"`
 	ConfigProfiles ConfigProfilesCmd `kong:"cmd,help='Update ~/.aws/config with AWS SSO profiles from the cache'"`
 	Config         ConfigCmd         `kong:"cmd,help='Run the configuration wizard'"`
+	Ecs            EcsCmd            `kong:"cmd,help='ECS Server commands'"`
 	Version        VersionCmd        `kong:"cmd,help='Print version and exit'"`
-	Setup          SetupCmd          `kong:"cmd,hidden"` // need this so variables are visisble.
 }
 
 func main() {
@@ -131,13 +141,17 @@ func main() {
 
 	log = logrus.New()
 	ctx, override := parseArgs(&cli)
-	awsconfig.SetLogger(log)
+	awscreds.SetLogger(log)
 	helper.SetLogger(log)
 	predictor.SetLogger(log)
 	sso.SetLogger(log)
 	storage.SetLogger(log)
+	tags.SetLogger(log)
 	url.SetLogger(log)
 	utils.SetLogger(log)
+	ecs.SetLogger(log)
+	server.SetLogger(log)
+	client.SetLogger(log)
 
 	if err := logLevelValidate(cli.LogLevel); err != nil {
 		log.Fatalf("%s", err.Error())
@@ -161,8 +175,12 @@ func main() {
 
 	if _, err := os.Stat(cli.ConfigFile); errors.Is(err, os.ErrNotExist) {
 		log.Warnf("No config file found!  Will now prompt you for a basic config...")
-		if err = setupWizard(&runCtx, false, false); err != nil {
+		if err = setupWizard(&runCtx, false, false, runCtx.Cli.Config.Advanced); err != nil {
 			log.Fatalf("%s", err.Error())
+		}
+		if ctx.Command() == "config" {
+			// we're done.
+			return
 		}
 	} else if err != nil {
 		log.WithError(err).Fatalf("Unable to open config file: %s", cli.ConfigFile)
@@ -217,7 +235,6 @@ func parseArgs(cli *CLI) (*kong.Context, sso.OverrideSettings) {
 		cli,
 		kong.Name("aws-sso"),
 		kong.Description("Securely manage temporary AWS API Credentials issued via AWS SSO"),
-		kong.UsageOnError(),
 		vars,
 	)
 
@@ -319,68 +336,6 @@ func GetRoleCredentials(ctx *RunContext, awssso *sso.AWSSSO, accountid int64, ro
 		log.WithError(err).Warnf("Unable to update cache")
 	}
 	return &creds
-}
-
-var AwsSSO *sso.AWSSSO // global
-
-// Creates a singleton AWSSO object post authentication
-func doAuth(ctx *RunContext) *sso.AWSSSO {
-	if AwsSSO != nil {
-		return AwsSSO
-	}
-	s, err := ctx.Settings.GetSelectedSSO(ctx.Cli.SSO)
-	if err != nil {
-		log.Fatalf("%s", err.Error())
-	}
-	AwsSSO = sso.NewAWSSSO(s, &ctx.Store)
-	err = AwsSSO.Authenticate(ctx.Settings.UrlAction, ctx.Settings.Browser)
-	if err != nil {
-		log.WithError(err).Fatalf("Unable to authenticate")
-	}
-	if err = ctx.Settings.Cache.Expired(s); err != nil {
-		ssoName, err := ctx.Settings.GetSelectedSSOName(ctx.Cli.SSO)
-		log.Infof("Refreshing AWS SSO role cache for %s, please wait...", ssoName)
-		if err != nil {
-			log.Fatalf(err.Error())
-		}
-		if err = ctx.Settings.Cache.Refresh(AwsSSO, s, ssoName); err != nil {
-			log.WithError(err).Fatalf("Unable to refresh cache")
-		}
-		if err = ctx.Settings.Cache.Save(true); err != nil {
-			log.WithError(err).Errorf("Unable to save cache")
-		}
-
-		// should we update our config??
-		if !ctx.Cli.NoConfigCheck && ctx.Settings.AutoConfigCheck {
-			if ctx.Settings.ConfigProfilesUrlAction != url.ConfigProfilesUndef {
-				cfgFile := utils.GetHomePath("~/.aws/config")
-
-				action, _ := url.NewAction(string(ctx.Settings.ConfigProfilesUrlAction))
-				profiles, err := ctx.Settings.GetAllProfiles(action)
-				if err != nil {
-					log.Warnf("Unable to update %s: %s", cfgFile, err.Error())
-					return AwsSSO
-				}
-
-				if err = profiles.UniqueCheck(ctx.Settings); err != nil {
-					log.Errorf("Unable to update %s: %s", cfgFile, err.Error())
-					return AwsSSO
-				}
-
-				f, err := utils.NewFileEdit(CONFIG_TEMPLATE, profiles)
-				if err != nil {
-					log.Errorf("%s", err)
-					return AwsSSO
-				}
-
-				if err = f.UpdateConfig(true, false, cfgFile); err != nil {
-					log.Errorf("Unable to update %s: %s", cfgFile, err.Error())
-					return AwsSSO
-				}
-			}
-		}
-	}
-	return AwsSSO
 }
 
 func logLevelValidate(level string) error {

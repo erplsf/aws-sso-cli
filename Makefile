@@ -1,4 +1,4 @@
-PROJECT_VERSION := 1.9.10
+PROJECT_VERSION := 1.13.1
 DOCKER_REPO     := synfinatic
 PROJECT_NAME    := aws-sso
 
@@ -11,13 +11,9 @@ else
 GOARCH             := $(ARCH)  # no idea if this works for other platforms....
 endif
 
-ifneq ($(BREW_INSTALL),1)
 PROJECT_TAG               := $(shell git describe --tags 2>/dev/null $(git rev-list --tags --max-count=1))
 PROJECT_COMMIT            := $(shell git rev-parse HEAD || echo "")
 PROJECT_DELTA             := $(shell DELTA_LINES=$$(git diff | wc -l); if [ $${DELTA_LINES} -ne 0 ]; then echo $${DELTA_LINES} ; else echo "''" ; fi)
-else
-PROJECT_TAG               := Homebrew
-endif
 
 BUILDINFOSDET ?=
 PROGRAM_ARGS ?=
@@ -67,33 +63,20 @@ install: $(DIST_DIR)$(PROJECT_NAME)  ## install binary in $INSTALL_PREFIX
 uninstall:  ## Uninstall binary from $INSTALL_PREFIX
 	rm $(INSTALL_PREFIX)/bin/$(PROJECT_NAME)
 
-HOMEBREW := ./homebrew/Formula/aws-sso-cli.rb
+release-brew:  ## Create a PR against homebrew to bump the version 
+	brew bump-formula-pr --version $(PROJECT_VERSION) aws-sso-cli
 
-homebrew: $(HOMEBREW)  ## Build homebrew tap file
+release-tag:  ## Tag our current HEAD as v$(PROJECT_VERSION)
+	git tag -a v$(PROJECT_VERSION) -m 'release $(PROJECT_VERSION)'
 
 #DOWNLOAD_URL := https://synfin.net/misc/aws-sso-cli.$(PROJECT_VERSION).tar.gz
 DOWNLOAD_URL ?= https://github.com/synfinatic/aws-sso-cli/archive/refs/tags/v$(PROJECT_VERSION).tar.gz
 
-.PHONY: shasum
-shasum:
+.PHONY: .shasum
+.shasum:
 	@which shasum >/dev/null || (echo "Missing 'shasum' binary" ; exit 1)
 	@echo "foo" | shasum -a 256 >/dev/null || (echo "'shasum' does not support: -a 256"; exit 1)
 
-.PHONY: $(HOMEBREW)
-$(HOMEBREW):  homebrew/template.rb.m4 shasum ## no-help
-	TEMPFILE=$$(mktemp) && wget -q -O $${TEMPFILE} $(DOWNLOAD_URL) ; \
-	if test -s $${TEMPFILE}; then \
-		export SHA=$$(cat $${TEMPFILE} | shasum -a 256 | sed -e 's|  -||') && rm $${TEMPFILE} && \
-		m4 -D __SHA256__=$${SHA} \
-		   -D __VERSION__=$(PROJECT_VERSION) \
-		   -D __COMMIT__=$(PROJECT_COMMIT) \
-		   -D __URL__=$(DOWNLOAD_URL) \
-		   homebrew/template.rb.m4 | tee $(HOMEBREW) && \
-		   echo "***** Please review above and test! ******" && \
-		   echo "File written to: $(HOMEBREW)  Please commit in git submodule!" ; \
-	else \
-		echo "*** Error downloading $(DOWNLOAD_URL) ***" ; \
-	fi
 
 .PHONY: package
 package: linux linux-arm64  ## Build deb/rpm packages
@@ -102,9 +85,9 @@ package: linux linux-arm64  ## Build deb/rpm packages
 		-v $$(pwd)/dist:/root/dist \
 		-e VERSION=$(PROJECT_VERSION) aws-sso-cli-builder:latest
 
-tags: cmd/aws-sso/*.go sso/*.go internal/*/*.go ## Create tags file for vim, etc
-	@echo Make sure you have Universal Ctags installed: https://github.com/universal-ctags/ctags
-	ctags --recurse=yes --exclude=.git --exclude=\*.sw?  --exclude=dist --exclude=docs
+tags: cmd/aws-sso/*.go sso/*.go internal/*/*.go internal/*/*/*.go ## Create tags file for vim, etc
+	@echo Make sure you have Go Tags installed: https://github.com/jstemmer/gotags 
+	gotags -f tags -sort=true $$(find . -type f -name "*.go")
 
 
 .build-release: windows windows32 linux linux-arm64 darwin darwin-arm64
@@ -117,11 +100,11 @@ tags: cmd/aws-sso/*.go sso/*.go internal/*/*.go ## Create tags file for vim, etc
 		exit 1 ; \
 	fi
 
-release: .validate-release clean .build-release package ## Build all our release binaries
+release: .validate-release .shasum clean .build-release package ## Build all our release binaries
 	cd dist && shasum -a 256 * | gpg --clear-sign >release.sig.asc
 
 .PHONY: run
-run: cmd/aws-sso/*.go  sso/*.go ## build and run using $PROGRAM_ARGS
+run: cmd/aws-sso/*.go sso/*.go ## build and run using $PROGRAM_ARGS
 	go run ./cmd/aws-sso $(PROGRAM_ARGS)
 
 .PHONY: delve
@@ -260,3 +243,8 @@ docs/default-region.png:
 .PHONY: loc
 loc:  ## Print LOC stats
 	wc -l $$(find . -name "*.go")
+
+update-copyright:  ## Update the copyright year on *.go
+	$(shell YEAR=$$(date +%Y) LAST_YEAR=$$(($$(date +%Y)-1)) \
+		sed -i '' -Ee "s|2021-${LAST_YEAR}|2021-${YEAR}|" $$(find . -name "*.go"))
+	@echo "Updated copyright to 2021-$$(date +%Y)"

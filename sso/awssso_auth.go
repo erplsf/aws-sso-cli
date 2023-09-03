@@ -2,7 +2,7 @@ package sso
 
 /*
  * AWS SSO CLI
- * Copyright (c) 2021-2022 Aaron Turner  <synfinatic at gmail dot com>
+ * Copyright (c) 2021-2023 Aaron Turner  <synfinatic at gmail dot com>
  *
  * This program is free software: you can redistribute it
  * and/or modify it under the terms of the GNU General Public License as
@@ -25,6 +25,7 @@ import (
 	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/service/sso"
 	"github.com/aws/aws-sdk-go-v2/service/ssooidc"
 	oidctypes "github.com/aws/aws-sdk-go-v2/service/ssooidc/types"
 	"github.com/synfinatic/aws-sso-cli/internal/storage"
@@ -109,8 +110,13 @@ func (as *AWSSSO) reauthenticate() error {
 		return fmt.Errorf("Unable to get device auth info from AWS SSO: %s", err.Error())
 	}
 
-	urlOpener := url.NewHandleUrl(as.urlAction, auth.VerificationUriComplete,
-		as.browser, as.urlExecCommand)
+	action := as.urlAction
+	if as.SSOConfig.AuthUrlAction != url.Undef {
+		// specific action for authentication?
+		action = as.SSOConfig.AuthUrlAction
+	}
+
+	urlOpener := url.NewHandleUrl(action, auth.VerificationUriComplete, as.browser, as.urlExecCommand)
 	urlOpener.ContainerSettings(as.StoreKey(), DEFAULT_AUTH_COLOR, DEFAULT_AUTH_ICON)
 
 	if err = urlOpener.Open(); err != nil {
@@ -261,7 +267,7 @@ func (as *AWSSSO) createToken() error {
 		} else if errors.As(err, &ape) {
 			time.Sleep(retryInterval)
 		} else {
-			return err
+			return fmt.Errorf("createToken: %s", err.Error())
 		}
 	}
 
@@ -284,4 +290,31 @@ func (as *AWSSSO) createToken() error {
 	}
 
 	return nil
+}
+
+// Logout performs an SSO logout with AWS and invalidates our SSO session
+func (as *AWSSSO) Logout() error {
+	token := as.Token.AccessToken
+
+	if token == "" {
+		// Fetch our access token from our secure store
+		tr := storage.CreateTokenResponse{}
+		if err := as.store.GetCreateTokenResponse(as.key, &tr); err != nil {
+			return err
+		}
+		token = tr.AccessToken
+
+		// delete the value from the store so we don't think we have a valid token
+		if err := as.store.DeleteCreateTokenResponse(as.key); err != nil {
+			log.WithError(err).Errorf("Unable to delete AccessToken from secure store")
+		}
+	}
+
+	input := &sso.LogoutInput{
+		AccessToken: aws.String(token),
+	}
+
+	// do the needful
+	_, err := as.sso.Logout(context.TODO(), input)
+	return err
 }

@@ -2,7 +2,7 @@ package main
 
 /*
  * AWS SSO CLI
- * Copyright (c) 2021-2022 Aaron Turner  <synfinatic at gmail dot com>
+ * Copyright (c) 2021-2023 Aaron Turner  <synfinatic at gmail dot com>
  *
  * This program is free software: you can redistribute it
  * and/or modify it under the terms of the GNU General Public License as
@@ -33,7 +33,7 @@ type ProcessCmd struct {
 	Arn       string `kong:"short='a',help='ARN of role to assume',xor='arn-1',xor='arn-2',predictor='arn'"`
 	AccountId int64  `kong:"name='account',short='A',help='AWS AccountID of role to assume',xor='arn-1',predictor='accountId'"`
 	Role      string `kong:"short='R',help='Name of AWS Role to assume',xor='arn-2',predictor='role'"`
-	Profile   string `kong:"short='p',help='Name of AWS Profile to assume',xor='arn-1',predictor='profile'"`
+	Profile   string `kong:"short='p',help='Name of AWS Profile to assume',xor='arn-1',xor='arn-2',predictor='profile'"`
 }
 
 func (cc *ProcessCmd) Run(ctx *RunContext) error {
@@ -49,7 +49,7 @@ func (cc *ProcessCmd) Run(ctx *RunContext) error {
 
 	if ctx.Cli.Process.Profile != "" {
 		cache := ctx.Settings.Cache.GetSSO()
-		rFlat, err := cache.Roles.GetRoleByProfile(ctx.Cli.Eval.Profile, ctx.Settings)
+		rFlat, err := cache.Roles.GetRoleByProfile(ctx.Cli.Process.Profile, ctx.Settings)
 		if err != nil {
 			return err
 		}

@@ -2,7 +2,7 @@ package main
 
 /*
  * AWS SSO CLI
- * Copyright (c) 2021-2022 Aaron Turner  <synfinatic at gmail dot com>
+ * Copyright (c) 2021-2023 Aaron Turner  <synfinatic at gmail dot com>
  *
  * This program is free software: you can redistribute it
  * and/or modify it under the terms of the GNU General Public License as
@@ -26,33 +26,68 @@ import (
 
 	"github.com/c-bata/go-prompt"
 	//	"github.com/davecgh/go-spew/spew"
+	"github.com/synfinatic/aws-sso-cli/internal/tags"
 	"github.com/synfinatic/aws-sso-cli/internal/utils"
 	"github.com/synfinatic/aws-sso-cli/sso"
 )
 
 type CompleterExec = func(*RunContext, *sso.AWSSSO, int64, string) error
 
-type TagsCompleter struct {
-	ctx      *RunContext
-	sso      *sso.SSOConfig
-	roleTags *sso.RoleTags
-	allTags  *sso.TagsList
-	suggest  []prompt.Suggest
-	exec     CompleterExec
+// PromptExec runs the interactive prompter and then on success runs our
+// CompleterExec function
+func (ctx *RunContext) PromptExec(exec CompleterExec) error {
+	sso, err := ctx.Settings.GetSelectedSSO(ctx.Cli.SSO)
+	if err != nil {
+		return err
+	}
+	if err = ctx.Settings.Cache.Expired(sso); err != nil {
+		log.Infof(err.Error())
+		c := &CacheCmd{}
+		if err = c.Run(ctx); err != nil {
+			return err
+		}
+	}
+
+	sso.Refresh(ctx.Settings)
+	fmt.Printf("Please use `exit` or `Ctrl-D` to quit.\n")
+
+	c := NewTagsCompleter(ctx, sso, exec)
+	opts := ctx.Settings.DefaultOptions(c.ExitChecker)
+	opts = append(opts, ctx.Settings.GetColorOptions()...)
+
+	p := prompt.New(
+		c.Executor,
+		c.Complete,
+		opts...,
+	)
+	p.Run()
+	return nil
 }
 
+type TagsCompleter struct {
+	ctx            *RunContext
+	sso            *sso.SSOConfig
+	roleTags       *sso.RoleTags
+	allTags        *tags.TagsList
+	suggest        []prompt.Suggest
+	exec           CompleterExec
+	fullTextSearch bool
+}
+
+// NewTagsCompleter creates our TagsCompleter
 func NewTagsCompleter(ctx *RunContext, s *sso.SSOConfig, exec CompleterExec) *TagsCompleter {
 	set := ctx.Settings
 	roleTags := set.Cache.GetRoleTagsSelect()
 	allTags := set.Cache.GetAllTagsSelect()
 
 	return &TagsCompleter{
-		ctx:      ctx,
-		sso:      s,
-		roleTags: roleTags,
-		allTags:  allTags,
-		suggest:  completeTags(roleTags, allTags, set.AccountPrimaryTag, []string{}),
-		exec:     exec,
+		ctx:            ctx,
+		sso:            s,
+		roleTags:       roleTags,
+		allTags:        allTags,
+		suggest:        completeTags(roleTags, allTags, set.AccountPrimaryTag, []string{}, set.FirstTag),
+		exec:           exec,
+		fullTextSearch: set.FullTextSearch,
 	}
 }
 
@@ -60,7 +95,11 @@ var CompleteSpaceReplace *regexp.Regexp = regexp.MustCompile(`\s+`)
 
 func (tc *TagsCompleter) Complete(d prompt.Document) []prompt.Suggest {
 	if d.TextBeforeCursor() == "" {
-		return prompt.FilterHasPrefix(tc.suggest, d.GetWordBeforeCursor(), true)
+		if tc.fullTextSearch {
+			return prompt.FilterContains(tc.suggest, d.GetWordBeforeCursor(), true)
+		} else {
+			return prompt.FilterHasPrefix(tc.suggest, d.GetWordBeforeCursor(), true)
+		}
 	}
 
 	args := d.TextBeforeCursor()
@@ -69,14 +108,19 @@ func (tc *TagsCompleter) Complete(d prompt.Document) []prompt.Suggest {
 	// remove any extra spaces
 	cleanArgs := CompleteSpaceReplace.ReplaceAllString(args, " ")
 	argsList := strings.Split(cleanArgs, " ")
-	suggest := completeTags(tc.roleTags, tc.allTags, tc.ctx.Settings.AccountPrimaryTag, argsList)
-	return prompt.FilterHasPrefix(suggest, w, true)
+	suggest := completeTags(tc.roleTags, tc.allTags, tc.ctx.Settings.AccountPrimaryTag, argsList, tc.ctx.Settings.FirstTag)
+	if tc.fullTextSearch {
+		return prompt.FilterContains(suggest, w, true)
+	} else {
+		return prompt.FilterHasPrefix(suggest, w, true)
+	}
 }
 
 // https://docs.aws.amazon.com/IAM/latest/UserGuide/reference_iam-quotas.html
 var isRoleARN *regexp.Regexp = regexp.MustCompile(`^arn:aws:iam::\d+:role/[a-zA-Z0-9\+=,\.@_-]+$`)
 var NoSpaceAtEnd *regexp.Regexp = regexp.MustCompile(`\s+$`)
 
+// Executor does the heavy lifting on the TagsCompleter
 func (tc *TagsCompleter) Executor(args string) {
 	args = NoSpaceAtEnd.ReplaceAllString(args, "")
 	if args == "exit" {
@@ -118,7 +162,7 @@ func (tc *TagsCompleter) ExitChecker(in string, breakline bool) bool {
 }
 
 // return a list of suggestions based on user selected []key:value
-func completeTags(roleTags *sso.RoleTags, allTags *sso.TagsList, accountPrimaryTags []string, args []string) []prompt.Suggest {
+func completeTags(roleTags *sso.RoleTags, allTags *tags.TagsList, accountPrimaryTags []string, args []string, firstTag string) []prompt.Suggest {
 	suggestions := []prompt.Suggest{}
 
 	currentTags, nextKey, nextValue := argsToMap(args)
@@ -137,7 +181,7 @@ func completeTags(roleTags *sso.RoleTags, allTags *sso.TagsList, accountPrimaryT
 
 		returnedRoles := map[string]bool{}
 
-		for _, key := range allTags.UniqueKeys(selectedKeys) {
+		for _, key := range allTags.UniqueKeys(selectedKeys, firstTag) {
 			uniqueRoles := roleTags.GetPossibleUniqueRoles(currentTags, key, (*allTags)[key])
 			if len(args) > 0 && len(uniqueRoles) == len(currentRoles) {
 				// skip keys which can't reduce our options
@@ -219,7 +263,7 @@ func completeTags(roleTags *sso.RoleTags, allTags *sso.TagsList, accountPrimaryT
 			for k := range currentTags {
 				usedKeys = append(usedKeys, k)
 			}
-			remainKeys := allTags.UniqueKeys(usedKeys)
+			remainKeys := allTags.UniqueKeys(usedKeys, firstTag)
 
 			for _, checkKey := range remainKeys {
 				if strings.Contains(strings.ToLower(checkKey), strings.ToLower(nextKey)) {

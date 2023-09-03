@@ -2,7 +2,7 @@ package storage
 
 /*
  * AWS SSO CLI
- * Copyright (c) 2021-2022 Aaron Turner  <synfinatic at gmail dot com>
+ * Copyright (c) 2021-2023 Aaron Turner  <synfinatic at gmail dot com>
  *
  * This program is free software: you can redistribute it
  * and/or modify it under the terms of the GNU General Public License as
@@ -142,4 +142,40 @@ func TestGetHeader(t *testing.T) {
 	h, err := x.GetHeader("Profile")
 	assert.NoError(t, err)
 	assert.Equal(t, "Profile", h)
+}
+
+func TestRoleCredentialsValidate(t *testing.T) {
+	r := RoleCredentials{
+		RoleName:        "RoleName",
+		AccessKeyId:     "AccessKeyId",
+		SecretAccessKey: "SecretAccessKey",
+		AccountId:       1,
+		SessionToken:    "SessionToken",
+		Expiration:      1,
+	}
+	assert.NoError(t, (&r).Validate())
+
+	k := r
+	k.RoleName = ""
+	assert.ErrorContains(t, (&k).Validate(), "roleName")
+
+	k = r
+	k.AccessKeyId = ""
+	assert.ErrorContains(t, (&k).Validate(), "accessKeyId")
+
+	k = r
+	k.SecretAccessKey = ""
+	assert.ErrorContains(t, (&k).Validate(), "secretAccessKey")
+
+	k = r
+	k.SessionToken = ""
+	assert.ErrorContains(t, (&k).Validate(), "sessionToken")
+
+	k = r
+	k.AccountId = 0
+	assert.ErrorContains(t, (&k).Validate(), "accountId")
+
+	k = r
+	k.Expiration = 0
+	assert.ErrorContains(t, (&k).Validate(), "expiration")
 }

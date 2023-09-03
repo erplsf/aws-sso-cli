@@ -2,7 +2,7 @@ package main
 
 /*
  * AWS SSO CLI
- * Copyright (c) 2021-2022 Aaron Turner  <synfinatic at gmail dot com>
+ * Copyright (c) 2021-2023 Aaron Turner  <synfinatic at gmail dot com>
  *
  * This program is free software: you can redistribute it
  * and/or modify it under the terms of the GNU General Public License as
@@ -40,6 +40,7 @@ func (cc *CacheCmd) Run(ctx *RunContext) error {
 	if err != nil {
 		return fmt.Errorf("Unable to refresh role cache: %s", err.Error())
 	}
+	ctx.Settings.Cache.PruneSSO(ctx.Settings)
 
 	err = ctx.Settings.Cache.Save(true)
 	if err != nil {

@@ -2,7 +2,7 @@ package predictor
 
 /*
  * AWS SSO CLI
- * Copyright (c) 2021-2022 Aaron Turner  <synfinatic at gmail dot com>
+ * Copyright (c) 2021-2023 Aaron Turner  <synfinatic at gmail dot com>
  *
  * This program is free software: you can redistribute it
  * and/or modify it under the terms of the GNU General Public License as
@@ -22,13 +22,14 @@ package predictor
 var AllListFields = map[string]string{
 	"Id":            "Column Index",
 	"Arn":           "AWS Role Resource Name",
-	"AccountId":     "AWS AccountID",
+	"AccountId":     "AWS AccountID (integer)",
+	"AccountIdPad":  "AWS AccountID (zero padded)",
 	"AccountName":   "Configured Account Name",
 	"AccountAlias":  "AWS Account Alias",
 	"DefaultRegion": "Default AWS Region",
 	"EmailAddress":  "Root Email for AWS account",
-	"ExpiresStr":    "Time until STS creds expire",
-	"Expires":       "Unix Epoch when STS creds expire",
+	"Expires":       "Time until STS creds expire",
+	"ExpiresEpoch":  "Unix Epoch when STS creds expire",
 	"RoleName":      "AWS Role Name",
 	"SSO":           "AWS SSO Instance Name",
 	"Via":           "Role Chain Via",
@@ -52,14 +53,20 @@ var AvailableAwsRegions []string = []string{
 	"ap-northeast-3",
 	"ap-southeast-1",
 	"ap-southeast-2",
+	"ap-southeast-3",
+	"ap-southeast-4",
 	"ap-northeast-1",
 	"ca-central-1",
 	"eu-central-1",
+	"eu-central-2",
 	"eu-west-1",
 	"eu-west-2",
-	"eu-south-1",
 	"eu-west-3",
+	"eu-south-1",
+	"eu-south-2",
 	"eu-north-1",
+	"il-central-1",
+	"me-central-1",
 	"me-south-1",
 	"sa-east-1",
 }
@@ -68,18 +75,26 @@ var AvailableAwsRegions []string = []string{
 var AvailableAwsSSORegions []string = []string{
 	"us-east-1",
 	"us-east-2",
+	"us-west-1",
 	"us-west-2",
+	"af-south-1",
+	"ap-east-1",
 	"ap-south-1",
+	"ap-northeast-1",
 	"ap-northeast-2",
+	"ap-northeast-3",
 	"ap-southeast-1",
 	"ap-southeast-2",
-	"ap-northeast-1",
+	"ap-southeast-3",
 	"ca-central-1",
 	"eu-central-1",
 	"eu-west-1",
 	"eu-west-2",
 	"eu-west-3",
+	"eu-south-1",
 	"eu-north-1",
 	"sa-east-1",
+	"me-south-1",
+	"us-gov-east-1",
 	"us-gov-west-1",
 }

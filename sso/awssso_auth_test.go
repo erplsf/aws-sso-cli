@@ -2,7 +2,7 @@ package sso
 
 /*
  * AWS SSO CLI
- * Copyright (c) 2021-2022 Aaron Turner  <synfinatic at gmail dot com>
+ * Copyright (c) 2021-2023 Aaron Turner  <synfinatic at gmail dot com>
  *
  * This program is free software: you can redistribute it
  * and/or modify it under the terms of the GNU General Public License as
@@ -26,6 +26,7 @@ import (
 	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/service/sso"
 	"github.com/aws/aws-sdk-go-v2/service/ssooidc"
 	"github.com/davecgh/go-spew/spew"
 	"github.com/stretchr/testify/assert"
@@ -343,17 +344,96 @@ func TestAuthenticateFailure(t *testing.T) {
 				CreateToken: &ssooidc.CreateTokenOutput{},
 				Error:       fmt.Errorf("some error"),
 			},
+			// fourth test
+			{
+				RegisterClient: &ssooidc.RegisterClientOutput{
+					AuthorizationEndpoint: nil,
+					ClientId:              aws.String("this-is-my-client-id"),
+					ClientSecret:          aws.String("this-is-my-client-secret"),
+					ClientIdIssuedAt:      time.Now().Unix(),
+					ClientSecretExpiresAt: int64(expires),
+					TokenEndpoint:         nil,
+				},
+				Error: nil,
+			},
+			{
+				StartDeviceAuthorization: &ssooidc.StartDeviceAuthorizationOutput{
+					DeviceCode:              aws.String("device-code"),
+					UserCode:                aws.String("user-code"),
+					VerificationUri:         aws.String(""),
+					VerificationUriComplete: aws.String("verification-uri-complete"),
+					ExpiresIn:               int32(expires),
+					Interval:                5,
+				},
+				Error: nil,
+			},
+			// fifth test
+			{
+				RegisterClient: &ssooidc.RegisterClientOutput{
+					AuthorizationEndpoint: nil,
+					ClientId:              aws.String("this-is-my-client-id"),
+					ClientSecret:          aws.String("this-is-my-client-secret"),
+					ClientIdIssuedAt:      time.Now().Unix(),
+					ClientSecretExpiresAt: int64(expires),
+					TokenEndpoint:         nil,
+				},
+				Error: nil,
+			},
+			{
+				StartDeviceAuthorization: &ssooidc.StartDeviceAuthorizationOutput{
+					DeviceCode:              aws.String("device-code"),
+					UserCode:                aws.String("user-code"),
+					VerificationUri:         aws.String("verification-uri"),
+					VerificationUriComplete: aws.String("verification-uri-complete"),
+					ExpiresIn:               int32(expires),
+					Interval:                5,
+				},
+				Error: nil,
+			},
+			// sixth test
+			{
+				RegisterClient: &ssooidc.RegisterClientOutput{
+					AuthorizationEndpoint: nil,
+					ClientId:              aws.String("this-is-my-client-id"),
+					ClientSecret:          aws.String("this-is-my-client-secret"),
+					ClientIdIssuedAt:      time.Now().Unix(),
+					ClientSecretExpiresAt: int64(expires),
+					TokenEndpoint:         nil,
+				},
+				Error: nil,
+			},
+			{
+				StartDeviceAuthorization: &ssooidc.StartDeviceAuthorizationOutput{
+					DeviceCode:              aws.String("device-code"),
+					UserCode:                aws.String("user-code"),
+					VerificationUri:         aws.String("verification-uri"),
+					VerificationUriComplete: aws.String("verification-uri-complete"),
+					ExpiresIn:               int32(expires),
+					Interval:                5,
+				},
+				Error: nil,
+			},
 		},
 	}
 
 	err = as.Authenticate("print", "fake-browser")
-	assert.Contains(t, err.Error(), "some error")
+	assert.Contains(t, err.Error(), "Unable to register client with AWS SSO")
 
 	err = as.Authenticate("print", "fake-browser")
-	assert.Contains(t, err.Error(), "some error")
+	assert.Contains(t, err.Error(), "Unable to start device authorization")
 
 	err = as.Authenticate("print", "fake-browser")
-	assert.Contains(t, err.Error(), "some error")
+	assert.Contains(t, err.Error(), "createToken:")
+
+	err = as.Authenticate("print", "fake-browser")
+	assert.Contains(t, err.Error(), "No valid verification url")
+
+	err = as.Authenticate("invalid", "fake-browser")
+	assert.Contains(t, err.Error(), "Unsupported Open action")
+
+	as.SSOConfig.AuthUrlAction = "invalid"
+	err = as.Authenticate("print", "fake-browser")
+	assert.Contains(t, err.Error(), "Unsupported Open action")
 }
 
 func TestReauthenticate(t *testing.T) {
@@ -449,4 +529,75 @@ func TestReauthenticate(t *testing.T) {
 
 	err = as.reauthenticate()
 	assert.Contains(t, err.Error(), "Unable to exec")
+}
+
+func TestLogout(t *testing.T) {
+	tfile, err := os.CreateTemp("", "*storage.json")
+	assert.NoError(t, err)
+
+	jstore, err := storage.OpenJsonStore(tfile.Name())
+	assert.NoError(t, err)
+
+	defer os.Remove(tfile.Name())
+	duration, _ := time.ParseDuration("10s")
+	as := &AWSSSO{
+		key:       "primary",
+		SsoRegion: "us-west-1",
+		StartUrl:  "https://testing.awsapps.com/start",
+		store:     jstore,
+		Roles:     map[string][]RoleInfo{},
+		SSOConfig: &SSOConfig{
+			settings: &Settings{},
+		},
+		Token: storage.CreateTokenResponse{
+			AccessToken:  "access-token",
+			ExpiresIn:    42,
+			ExpiresAt:    time.Now().Add(duration).Unix(),
+			IdToken:      "id-token",
+			RefreshToken: "refresh-token",
+			TokenType:    "token-type",
+		},
+		urlAction: "print",
+	}
+
+	as.sso = &mockSsoAPI{
+		Results: []mockSsoAPIResults{
+			{
+				Logout: &sso.LogoutOutput{},
+				Error:  nil,
+			},
+		},
+	}
+
+	err = as.Logout()
+	assert.NoError(t, err)
+	tr := storage.CreateTokenResponse{}
+	assert.Error(t, as.store.GetCreateTokenResponse(as.key, &tr))
+
+	as.Token.AccessToken = ""
+	as.sso = &mockSsoAPI{
+		Results: []mockSsoAPIResults{
+			{
+				Logout: &sso.LogoutOutput{},
+				Error:  nil,
+			},
+		},
+	}
+
+	err = as.Logout()
+	assert.Error(t, err)
+
+	err = jstore.SaveCreateTokenResponse("primary", storage.CreateTokenResponse{
+		AccessToken:  "access-token",
+		ExpiresIn:    42,
+		ExpiresAt:    time.Now().Add(duration).Unix(),
+		IdToken:      "id-token",
+		RefreshToken: "refresh-token",
+		TokenType:    "token-type",
+	})
+	assert.NoError(t, err)
+	err = as.Logout()
+	assert.NoError(t, err)
+	err = jstore.GetCreateTokenResponse("primary", &storage.CreateTokenResponse{})
+	assert.Error(t, err)
 }

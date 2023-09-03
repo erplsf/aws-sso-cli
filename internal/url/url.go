@@ -2,7 +2,7 @@ package url
 
 /*
  * AWS SSO CLI
- * Copyright (c) 2021-2022 Aaron Turner  <synfinatic at gmail dot com>
+ * Copyright (c) 2021-2023 Aaron Turner  <synfinatic at gmail dot com>
  *
  * This program is free software: you can redistribute it
  * and/or modify it under the terms of the GNU General Public License as
@@ -83,10 +83,10 @@ const (
 	Clip             Action = "clip"     // copy to clipboard
 	Print            Action = "print"    // print message & url to stderr
 	PrintUrl         Action = "printurl" // print only the  url to stderr
-	Exec                    = "exec"     // Exec comand
-	Open                    = "open"     // auto-open in default or specified browser
-	GrantedContainer        = "granted-containers"
-	OpenUrlContainer        = "open-url-in-container"
+	Exec             Action = "exec"     // Exec comand
+	Open             Action = "open"     // auto-open in default or specified browser
+	GrantedContainer Action = "granted-containers"
+	OpenUrlContainer Action = "open-url-in-container"
 )
 
 func (u Action) IsContainer() bool {
@@ -98,10 +98,10 @@ type ConfigProfilesAction string
 const (
 	ConfigProfilesUndef            ConfigProfilesAction = ""     // undefined
 	ConfigProfilesClip             ConfigProfilesAction = "clip" // copy to clipboard
-	ConfigProfilesExec                                  = "exec" // Exec comand
-	ConfigProfilesOpen                                  = "open" // auto-open in default or specified browser
-	ConfigProfilesGrantedContainer                      = "granted-containers"
-	ConfigProfilesOpenUrlContainer                      = "open-url-in-container"
+	ConfigProfilesExec             ConfigProfilesAction = "exec" // Exec comand
+	ConfigProfilesOpen             ConfigProfilesAction = "open" // auto-open in default or specified browser
+	ConfigProfilesGrantedContainer ConfigProfilesAction = "granted-containers"
+	ConfigProfilesOpenUrlContainer ConfigProfilesAction = "open-url-in-container"
 )
 
 func (u ConfigProfilesAction) IsContainer() bool {
@@ -316,4 +316,14 @@ func commandBuilder(command []string, url string) (string, []string, error) {
 	}
 
 	return program, cmdList, nil
+}
+
+// SSOAuthAction returns the action except in the case where it might use a
+// container, in that case it returns a straight Open.  This is so that URLs
+// used to do AWS SSO auth use the primary browser session to avoid re-auth
+func SSOAuthAction(action Action) Action {
+	if action.IsContainer() {
+		return Open
+	}
+	return action
 }

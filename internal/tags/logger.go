@@ -1,8 +1,8 @@
-package awsconfig
+package tags
 
 /*
  * AWS SSO CLI
- * Copyright (c) 2021-2022 Aaron Turner  <synfinatic at gmail dot com>
+ * Copyright (c) 2021-2023 Aaron Turner  <synfinatic at gmail dot com>
  *
  * This program is free software: you can redistribute it
  * and/or modify it under the terms of the GNU General Public License as
@@ -19,23 +19,20 @@ package awsconfig
  */
 
 import (
-	"gopkg.in/ini.v1"
+	"github.com/sirupsen/logrus"
 )
 
-func HasStaticCreds(s *ini.Section) bool {
-	awsAccessKeyId := false
-	awsSecretAccessKey := false
-	for _, key := range s.KeyStrings() {
-		switch key {
-		case "aws_access_key_id":
-			awsAccessKeyId = true
-		case "aws_secret_access_key":
-			awsSecretAccessKey = true
-		case "mfa_serial":
-			// we don't support prompting for MFA so don't import them
-			log.Infof("Skipping MFA enabled profile: %s", s.Name())
-			return false
-		}
-	}
-	return awsAccessKeyId && awsSecretAccessKey
+var log *logrus.Logger
+
+func SetLogger(l *logrus.Logger) {
+	log = l
+}
+
+func GetLogger() *logrus.Logger {
+	return log
+}
+
+// this is configured by cmd/main.go, but we have this here for unit tests
+func init() {
+	log = logrus.New()
 }

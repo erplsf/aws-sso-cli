@@ -5,6 +5,8 @@
  * [How do I logout?](#how-do-i-logout)
  * [When will my credentials expire?](#when-will-my-credentials-expire)
  * [What happens when credentials expire?](#what-happens-when-credentials-expire)
+ * [Why can't aws-sso find my new role?](#why-cant-aws-sso-find-my-new-role)
+ * [Spaces are invalid in Profile names](#spaces-are-invalid-in-profile-names)
 
 ##### Advanced Features
 
@@ -24,6 +26,8 @@
 
 ##### Security
 
+ * [What is the AWS SSO security policy?](../security.md)
+ * [How do I report a security vulnerability?](../security.md#reporting-a-vulnerability)
  * [Are macOS Keychain items synced?](#are-macos-keychain-items-synced)
  * [How do I delete all secrets from the macOS Keychain?](#how-do-i-delete-all-secrets-from-the-macos-keychain)
  * [Which SecureStore should I use?](#which-securestore-should-i-use)
@@ -36,6 +40,7 @@
  * [Error: Unable to save... org.freedesktop.DBus.Properties](#error-unable-to-save-orgfreedesktopdbusproperties)
  * [Error: Invalid grant provided](#error-invalid-grant-provided)
  * [Error: Unexpected AccessToken failure; refreshing](#error-unexpected-accesstoken-failure-refreshing)
+ * [Warning: Exceeded MaxRetry/MaxBackoff. Consider tuning values.](#warning-exceeded-maxretry-maxbackoff-consider-tuning-values)
 
 ##### Misc
 
@@ -57,11 +62,34 @@ See the [flush command](commands.md#flush) for how to flush either or both of th
 ### When will my credentials expire?
 
 Your credentials will expire based on how long your administrator allows. To
-see how long your credentials have until they expire, see the [list command)[commands.md#list).
+see how long your credentials have until they expire, see the [list command](commands.md#list).
 
 ### What happens when credentials expire?
 
-The next call to `aws-sso exec` or `aws-sso eval` will automatically refresh them.
+The next call to `aws-sso exec` or `aws-sso eval` will automatically refresh them
+as appropriate.
+
+### Why can't aws-sso find my new role?
+
+If you have just been assigned a new PermissionSet in IAM Identity Center, it
+tends to show up in the IAM Identity Center web console
+(https://xxxxx.awsapps.com/start) before it is made available to the
+[ListAccountRoles](https://docs.aws.amazon.com/singlesignon/latest/PortalAPIReference/API_ListAccountRoles.html)
+API call.  Unfortunately, this seems to be a limitation with AWS and you just
+have to wait a few minutes.
+
+You can see what the AWS ListAccountRoles API is returning via `aws-sso cache -L debug`t
+
+### Spaces are invalid in Profile names
+
+If your [ProfileFormat](config.md#ProfileFormat) contains either `AccountName`
+or `AccountAlias` you may end up with an invalid Profile name which contains a
+space.
+
+Their are two possible solutions:
+
+ 1. Don't include a space in the [AccountName](config.md#name)
+ 2. Strip/replace the space [via the ProfileFormat option](#how-to-configure-profileformat)
 
 ### How do I delete all secrets from the macOS keychain?
 
@@ -73,21 +101,17 @@ The next call to `aws-sso exec` or `aws-sso eval` will automatically refresh the
 
 In a word: alpha.
 
-Right now you are pretty much limited to using CommandPrompt (`cmd.exe`) instead
-of PowerShell or MINGW64/bash.  Not that you can't use PowerShell or bash, but
-there are a number of terminal related issues which cause `aws-sso` to behave
-incorrectly.  Would likely have to change how input processing other than for
-CLI arguments work for it to work with PowerShell or MINGW64/bash.
+For best experience, I recommend using CommandPrompt (`cmd.exe) instead of PowerShell
+or MINGW64/bash.  Not that you can't use PowerShell or bash, but there are a number of
+terminal related issues which cause `aws-sso` to behave incorrectly.
+PowerShell and MINGW64/bash users should rely on CLI arguments rather than the
+interactive role selector.
 
 [Tracking ticket](https://github.com/synfinatic/aws-sso-cli/issues/189)
 
-There is also the issue right now that the `eval` command does not work on Windows
-because it has no equivalant to the bash `eval` and there does not seem to be a
-reasonable way to generate and auto-execute batch files.  And of course, batch
-files must be written to disk and would contain the clear text secrets that
-`aws-sso` works very hard to never write to disk in clear text.
-
-[Tracking ticket](https://github.com/synfinatic/aws-sso-cli/issues/188)
+Now that [#188](https://github.com/synfinatic/aws-sso-cli/issues/188) has been fixed,
+PowerShell users can use the `eval` command to load IAM credentials into their current
+shell.
 
 If you are a Windows user and experience any bugs, please open a [detailed bug report](
 https://github.com/synfinatic/aws-sso-cli/issues/new?labels=bug&template=bug_report.md).
@@ -136,12 +160,16 @@ manage the variable.
 <!-- https://github.com/synfinatic/aws-sso-cli/issues/166 -->
 ![](https://user-images.githubusercontent.com/1075352/143502947-1465f68f-0ef5-4de7-a997-ea716facc637.png)
 
-### AccountName vs AccountAlias
+### AccountAlias vs AccountName
 
-The `AccountAlias` is defined in AWS itself and is visible via the
-[iam:ListAccountAliases](
-https://docs.aws.amazon.com/IAM/latest/APIReference/API_ListAccountAliases.html)
-API call.
+Due to poor decisions on my part, this is ugly.  Sorry about that.  With that
+said...
+
+The `AccountAlias` is defined by the AWS account owner for the account
+via the AWS Console.  However, this is _not_ the
+[AWS Account Alias](https://docs.aws.amazon.com/IAM/latest/UserGuide/console_account-alias.html#AboutAccountAlias),
+but rather the [AWS Account Name](https://docs.aws.amazon.com/accounts/latest/reference/manage-acct-update-root-user.html)
+which is retrieved via the AWS sso:ListAccount API.
 
 The `AccountName` is defined explicitly in the `~/.aws-sso/config.yaml` file like this:
 
@@ -156,6 +184,10 @@ SSOConfig:
 ```
 
 or automatically via the [ProfileFormat config option](config.md#profileformat).
+
+So when you specify `AccountAlias` in the [ProfileFormat](config.md#ProfileFormat)
+or see it in the [list](commands.md#list) command, you're actually using the
+AWS Account Name set by the account owner.
 
 ### Defining `$AWS_PROFILE` and `$AWS_SSO_PROFILE` variable names
 
@@ -190,25 +222,31 @@ purposes:
  2. Makes it easy to select a role via the `$AWS_PROFILE` environment variable
     when you use the [config-profiles](commands.md#config-profiles) command.
 
-By default, `ProfileFormat` is set to `{{ AccountIdStr .AccountId }}:{{ .RoleName }}`
-which will generate a value like `02345678901:MyRoleName`.
+By default, `ProfileFormat` is set to `{{ .AccountIdPad }}:{{ .RoleName }}`
+which will generate a value like `02345678901:MyRoleName`.  For a complete
+list of available variable names, see [ProfileFormat](config.md#profileformat).
 
-Some examples:
+In my experience you can change the `ProfileFormat` to pretty much any valid
+ASCII string that does not include whitespace or special characters that would
+be evaluated by your shell (`$`, etc) or
+[the AWS configuration file](https://docs.aws.amazon.com/cli/latest/userguide/cli-configure-files.html#cli-configure-files-using-profiles)
+such as `[`, `]`.  (Note: if you can find official AWS documentation on this
+subject, please let me know!)
 
- * `ProfileFormat: '{{ FirstItem .AccountName .AccountAlias }}'` -- If there
+Some example `ProfileFormat` values:
+
+ * `'{{ FirstItem .AccountName .AccountAlias }}'` -- If there
     is an Account Name set in the config.yaml print that, otherwise print the
     Account Alias defined by the AWS administrator.
- * `ProfileFormat: '{{ AccountIdStr .AccountId }}'` -- Pad the AccountId with
-    leading zeros if it is < 12 digits long
- * `ProfileFormat: '{{ .AccountId }}'` -- Print the AccountId as a regular number
- * `ProfileFormat: '{{ StringsJoin ":" .AccountAlias .RoleName }}'` -- Another
+ * `'{{ .AccountIdPad }}'` -- Pad the AccountId with leading zeros if it is < 12 digits long
+ * `'{{ .AccountId }}'` -- Print the AccountId as a regular number
+ * `'{{ StringsJoin ":" .AccountAlias .RoleName }}'` -- Another
     way of writing `{{ .AccountAlias }}:{{ .RoleName }}`
- * `ProfileFormat: '{{ StringReplace " " "_" .AccountAlias }}'` -- Replace any
-    spaces (` `) in the AccountAlias with an underscore (`_`).
- * `ProfileFormat: '{{ FirstItem .AccountName nospaces(.AccountAlias) }}:{{ .RoleName }}'`
+ * `'{{ StringReplace " " "_" .AccountAlias }}'` -- Replace any spaces (` `) in the AccountAlias with an underscore (`_`).
+ * `'{{ FirstItem .AccountName nospaces(.AccountAlias) }}:{{ .RoleName }}'`
     -- Use the Account Name if set, otherwise use the Account Alias (without spaces)
     and then append a colon, followed by the IAM Role Name.
- * `ProfileFormat: '{{ .AccountAlias | kebabcase }}:{{ .RoleName }}'
+ * `'{{ .AccountAlias | kebabcase }}:{{ .RoleName }}'
 	-- Reformat the AWS account alias like `AStringLikeThis` into
 	`a-string-like-this` using the [kebabcase function](
 	http://masterminds.github.io/sprig/strings.html#kebabcase).
@@ -340,6 +378,19 @@ indicate that AWS is throttling requests because the number of
 
 Note: Unlike most errors, this one is not always fatal, but it can cause `aws-sso`
 to behave very poorly.
+
+### Warning: Exceeded MaxRetry/MaxBackoff. Consider tuning values.
+
+While trying to refresh the cache of accounts and roles, `aws-sso` is exceeding
+the rate limits put in place by AWS and that rate limiting is causing
+the number of retries to exceed the [MaxRetry](config.md#maxretry) limit.
+
+This typically will happen with large numbers of accounts and multiple threads.
+
+You may wish to consider reducing the number of [Threads](config.md#threads)
+to reduce chances of this happening (fewer threads can increase performance
+by not incurring the backoff delay penalty) or adjust the MaxRetry and/or
+[MaxBackoff](config.md#maxbackoff) parameters.
 
 ### Are macOS Keychain items synced?
 

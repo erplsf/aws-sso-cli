@@ -2,7 +2,7 @@ package storage
 
 /*
  * AWS SSO CLI
- * Copyright (c) 2021-2022 Aaron Turner  <synfinatic at gmail dot com>
+ * Copyright (c) 2021-2023 Aaron Turner  <synfinatic at gmail dot com>
  *
  * This program is free software: you can redistribute it
  * and/or modify it under the terms of the GNU General Public License as
@@ -19,6 +19,7 @@ package storage
  */
 
 import (
+	"fmt"
 	"reflect"
 	"time"
 
@@ -108,6 +109,34 @@ func (r *RoleCredentials) AccountIdStr() string {
 		log.WithError(err).Fatalf("Unable to parse accountId from AWS role credentials")
 	}
 	return s
+}
+
+// Validate ensures we have the necessary fields
+func (r *RoleCredentials) Validate() error {
+	if r.RoleName == "" {
+		return fmt.Errorf("Missing roleName")
+	}
+
+	if r.AccessKeyId == "" {
+		return fmt.Errorf("Missing accessKeyId")
+	}
+
+	if r.SecretAccessKey == "" {
+		return fmt.Errorf("Missing secretAccessKey")
+	}
+
+	if r.AccountId == 0 {
+		return fmt.Errorf("Missing accountId")
+	}
+
+	if r.SessionToken == "" {
+		return fmt.Errorf("Missing sessionToken")
+	}
+
+	if r.Expiration == 0 {
+		return fmt.Errorf("Missing expiration")
+	}
+	return nil
 }
 
 type StaticCredentials struct { // Cache and storage
