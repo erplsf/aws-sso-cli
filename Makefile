@@ -1,4 +1,4 @@
-PROJECT_VERSION := 1.13.1
+PROJECT_VERSION := 1.14.0
 DOCKER_REPO     := synfinatic
 PROJECT_NAME    := aws-sso
 
@@ -67,7 +67,8 @@ release-brew:  ## Create a PR against homebrew to bump the version
 	brew bump-formula-pr --version $(PROJECT_VERSION) aws-sso-cli
 
 release-tag:  ## Tag our current HEAD as v$(PROJECT_VERSION)
-	git tag -a v$(PROJECT_VERSION) -m 'release $(PROJECT_VERSION)'
+	git tag -sa v$(PROJECT_VERSION) -m 'release $(PROJECT_VERSION)'
+	git push --tags
 
 #DOWNLOAD_URL := https://synfin.net/misc/aws-sso-cli.$(PROJECT_VERSION).tar.gz
 DOWNLOAD_URL ?= https://github.com/synfinatic/aws-sso-cli/archive/refs/tags/v$(PROJECT_VERSION).tar.gz
