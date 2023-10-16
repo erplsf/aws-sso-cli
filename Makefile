@@ -81,7 +81,7 @@ DOWNLOAD_URL ?= https://github.com/synfinatic/aws-sso-cli/archive/refs/tags/v$(P
 
 .PHONY: package
 package: linux linux-arm64  ## Build deb/rpm packages
-	docker build -t aws-sso-cli-builder:latest .
+	docker build -t aws-sso-cli-builder:latest -f Dockerfile.package .
 	docker run --rm \
 		-v $$(pwd)/dist:/root/dist \
 		-e VERSION=$(PROJECT_VERSION) aws-sso-cli-builder:latest
@@ -250,9 +250,9 @@ update-copyright:  ## Update the copyright year on *.go
 		sed -i '' -Ee "s|2021-${LAST_YEAR}|2021-${YEAR}|" $$(find . -name "*.go"))
 	@echo "Updated copyright to 2021-$$(date +%Y)"
 
-serve-docs:  ## Run mkdoc server on localhost:8000
-	mkdocs serve 
-
-upload-docs:  ## Upload docs to github 
-	mkdocs gh-deploy
-
+serve-docs:  ## Run mkdocs server on localhost:8000 
+	docker build -t synfinatic/mkdocs-material:latest -f Dockerfile.mkdocs .
+	docker run --rm \
+		-v $$(pwd):/docs \
+		-p 8000:8000 \
+		synfinatic/mkdocs-material:latest

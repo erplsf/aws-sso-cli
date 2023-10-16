@@ -1,9 +1,10 @@
-name: Publish docs via GitHub Pages
+name: Update Docs
 on:
   push:
     branches:
       - main
     paths:
+      - '.github/**'
       - 'docs/**'
       - 'mkdocs.yml'
 
@@ -13,10 +14,11 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout main
-        uses: actions/checkout@v2
+        uses: actions/checkout@v4
 
       - name: Deploy docs
-        uses: mhausenblas/mkdocs-deploy-gh-pages@master
+        uses: synfinatic/mkdocs-deploy-gh-pages@bump-mkdocs
+        # mhausenblas/mkdocs-deploy-gh-pages@master is an old version of mkdocs, so using my own
         # Or use mhausenblas/mkdocs-deploy-gh-pages@nomaterial to build without the mkdocs-material theme
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -24,4 +26,4 @@ jobs:
           CONFIG_FILE: mkdocs.yml
           # EXTRA_PACKAGES: build-base
           # GITHUB_DOMAIN: github.myenterprise.com
-          # REQUIREMENTS: folder/requirements.txt
+          REQUIREMENTS: docs/requirements.txt

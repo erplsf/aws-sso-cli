@@ -1,6 +1,6 @@
 module github.com/synfinatic/aws-sso-cli
 
-go 1.19
+go 1.21
 
 require (
 	github.com/99designs/keyring v1.2.2
@@ -11,7 +11,7 @@ require (
 	github.com/davecgh/go-spew v1.1.1
 	github.com/goccy/go-yaml v1.9.4
 	github.com/hexops/gotextdiff v1.0.3
-	github.com/knadh/koanf v0.16.0
+	github.com/knadh/koanf v1.5.0
 	github.com/manifoldco/promptui v0.9.0
 	github.com/posener/complete v1.2.3
 	github.com/sirupsen/logrus v1.9.0
@@ -23,10 +23,10 @@ require (
 )
 
 require (
-	github.com/aws/aws-sdk-go-v2 v1.17.6-0.20230224191550-a8b24ddf773d
+	github.com/aws/aws-sdk-go-v2 v1.21.2
 	github.com/riywo/loginshell v0.0.0-20200815045211-7d26008be1ab
 	golang.org/x/term v0.13.0
-	gopkg.in/ini.v1 v1.66.4
+	gopkg.in/ini.v1 v1.67.0
 )
 
 require (
@@ -38,19 +38,19 @@ require (
 	github.com/fatih/color v1.10.0 // indirect
 	github.com/fsnotify/fsnotify v1.4.9 // indirect
 	github.com/godbus/dbus v0.0.0-20190726142602-4481cbc300e2 // indirect
-	github.com/google/uuid v1.1.1 // indirect
+	github.com/google/uuid v1.1.2 // indirect
 	github.com/gsterjov/go-libsecret v0.0.0-20161001094733-a6f4afe4910c // indirect
 	github.com/hashicorp/errwrap v1.0.0 // indirect
-	github.com/hashicorp/go-multierror v1.0.0 // indirect
+	github.com/hashicorp/go-multierror v1.1.0 // indirect
 	github.com/huandu/xstrings v1.3.3 // indirect
 	github.com/imdario/mergo v0.3.11 // indirect
 	github.com/mattn/go-colorable v0.1.8 // indirect
 	github.com/mattn/go-isatty v0.0.12 // indirect
 	github.com/mattn/go-runewidth v0.0.9 // indirect
 	github.com/mattn/go-tty v0.0.3 // indirect
-	github.com/mitchellh/copystructure v1.1.1 // indirect
-	github.com/mitchellh/mapstructure v1.2.2 // indirect
-	github.com/mitchellh/reflectwalk v1.0.1 // indirect
+	github.com/mitchellh/copystructure v1.2.0 // indirect
+	github.com/mitchellh/mapstructure v1.5.0 // indirect
+	github.com/mitchellh/reflectwalk v1.0.2 // indirect
 	github.com/mtibben/percent v0.2.1 // indirect
 	github.com/pkg/term v1.1.0 // indirect
 	github.com/pmezard/go-difflib v1.0.0 // indirect
@@ -60,7 +60,6 @@ require (
 	// see: https://github.com/sirupsen/logrus/issues/1275
 	golang.org/x/sys v0.13.0 // indirect
 	golang.org/x/xerrors v0.0.0-20200804184101-5ec99f83aff1 // indirect
-	gopkg.in/yaml.v2 v2.3.0 // indirect
 
 	// see: https://github.com/go-yaml/yaml/issues/666
 	// imported via testify, but they haven't yet merged the PR
@@ -69,21 +68,21 @@ require (
 )
 
 require (
-	github.com/aws/aws-sdk-go-v2/config v1.18.15
-	github.com/aws/aws-sdk-go-v2/credentials v1.13.15
+	github.com/aws/aws-sdk-go-v2/config v1.18.45
+	github.com/aws/aws-sdk-go-v2/credentials v1.13.43
 	github.com/aws/aws-sdk-go-v2/service/iam v1.19.4
-	github.com/aws/aws-sdk-go-v2/service/sso v1.12.4
-	github.com/aws/aws-sdk-go-v2/service/ssooidc v1.14.4
-	github.com/aws/aws-sdk-go-v2/service/sts v1.18.5
+	github.com/aws/aws-sdk-go-v2/service/sso v1.15.2
+	github.com/aws/aws-sdk-go-v2/service/ssooidc v1.17.3
+	github.com/aws/aws-sdk-go-v2/service/sts v1.23.2
 	golang.org/x/net v0.17.0
 )
 
 require (
 	github.com/99designs/go-keychain v0.0.0-20191008050251-8e49817e8af4 // indirect
-	github.com/aws/aws-sdk-go-v2/feature/ec2/imds v1.12.23 // indirect
-	github.com/aws/aws-sdk-go-v2/internal/configsources v1.1.29 // indirect
-	github.com/aws/aws-sdk-go-v2/internal/endpoints/v2 v2.4.23 // indirect
-	github.com/aws/aws-sdk-go-v2/internal/ini v1.3.30 // indirect
-	github.com/aws/aws-sdk-go-v2/service/internal/presigned-url v1.9.23 // indirect
-	github.com/aws/smithy-go v1.13.5 // indirect
+	github.com/aws/aws-sdk-go-v2/feature/ec2/imds v1.13.13 // indirect
+	github.com/aws/aws-sdk-go-v2/internal/configsources v1.1.43 // indirect
+	github.com/aws/aws-sdk-go-v2/internal/endpoints/v2 v2.4.37 // indirect
+	github.com/aws/aws-sdk-go-v2/internal/ini v1.3.45 // indirect
+	github.com/aws/aws-sdk-go-v2/service/internal/presigned-url v1.9.37 // indirect
+	github.com/aws/smithy-go v1.15.0 // indirect
 )
