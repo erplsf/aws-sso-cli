@@ -21,6 +21,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -39,8 +40,6 @@ import (
 	"github.com/synfinatic/aws-sso-cli/internal/utils"
 	"github.com/synfinatic/aws-sso-cli/sso"
 )
-
-const AWS_FEDERATED_URL = "https://signin.aws.amazon.com/federation"
 
 type ConsoleCmd struct {
 	// Console actually should honor the --region flag
@@ -86,18 +85,23 @@ func (cc *ConsoleCmd) Run(ctx *RunContext) error {
 	if awssso, err := sci.Update(ctx); err == nil {
 		// successful lookup?
 		return openConsole(ctx, awssso, sci.AccountId, sci.RoleName)
+	} else if !errors.Is(err, &NoRoleSelectedError{}) {
+		// invalid arguments, not missing
+		return err
 	}
 
 	// Check our various ENV vars
 	if haveAWSEnvVars(ctx) {
 		return consoleViaEnvVars(ctx)
-	} else if ctx.Cli.Console.AwsProfile != "" {
+	}
+
+	if ctx.Cli.Console.AwsProfile != "" { // ENV variable check
 		ssoCache := ctx.Settings.Cache.GetSSO()
 		_, err := ssoCache.Roles.GetRoleByProfile(ctx.Cli.Console.AwsProfile, ctx.Settings)
 		if err == nil {
 			return consoleViaSDK(ctx)
 		}
-		log.Warnf("AWS_PROFILE=%s was not found in our cache.", ctx.Cli.Console.AwsProfile)
+		return fmt.Errorf("AWS_PROFILE=%s was not found in our cache.", ctx.Cli.Console.AwsProfile)
 	}
 
 	// fall back to interactive prompting...
@@ -249,6 +253,7 @@ func openConsole(ctx *RunContext, awssso *sso.AWSSSO, accountid int64, role stri
 func openConsoleAccessKey(ctx *RunContext, creds *storage.RoleCredentials,
 	duration int32, region string, accountId int64, role string) error {
 	signin := SigninTokenUrlParams{
+		SsoRegion:       AwsSSO.SsoRegion,
 		SessionDuration: duration * 60,
 		Session: SessionUrlParams{
 			AccessKeyId:     creds.AccessKeyId,
@@ -275,6 +280,7 @@ func openConsoleAccessKey(ctx *RunContext, creds *storage.RoleCredentials,
 	loginResponse := LoginResponse{}
 	err = json.Unmarshal(body, &loginResponse)
 	if err != nil {
+		log.Tracef("LoginResponse body: %s", body)
 		return fmt.Errorf("Error parsing Login response: %s", err.Error())
 	}
 
@@ -285,8 +291,9 @@ func openConsoleAccessKey(ctx *RunContext, creds *storage.RoleCredentials,
 	issuer := sso.StartUrl
 
 	login := LoginUrlParams{
+		SsoRegion:   AwsSSO.SsoRegion,
 		Issuer:      issuer,
-		Destination: fmt.Sprintf("https://console.aws.amazon.com/console/home?region=%s", region),
+		Destination: url.AWSConsoleUrl(AwsSSO.SsoRegion, region),
 		SigninToken: loginResponse.SigninToken,
 	}
 
@@ -317,13 +324,14 @@ type LoginResponse struct {
 }
 
 type SigninTokenUrlParams struct {
+	SsoRegion       string
 	SessionDuration int32
 	Session         SessionUrlParams // URL encoded SessionUrlParams
 }
 
 func (stup *SigninTokenUrlParams) GetUrl() string {
 	return fmt.Sprintf("%s?Action=getSigninToken&SessionDuration=%d&Session=%s",
-		AWS_FEDERATED_URL, stup.SessionDuration, stup.Session.Encode())
+		url.AWSFederatedUrl(stup.SsoRegion), stup.SessionDuration, stup.Session.Encode())
 }
 
 type SessionUrlParams struct {
@@ -338,6 +346,7 @@ func (sup *SessionUrlParams) Encode() string {
 }
 
 type LoginUrlParams struct {
+	SsoRegion   string
 	Issuer      string
 	Destination string
 	SigninToken string
@@ -345,6 +354,6 @@ type LoginUrlParams struct {
 
 func (lup *LoginUrlParams) GetUrl() string {
 	return fmt.Sprintf("%s?Action=login&Issuer=%s&Destination=%s&SigninToken=%s",
-		AWS_FEDERATED_URL, lup.Issuer, lup.Destination,
+		url.AWSFederatedUrl(lup.SsoRegion), lup.Issuer, lup.Destination,
 		lup.SigninToken)
 }

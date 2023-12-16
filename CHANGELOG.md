@@ -2,7 +2,24 @@
 
 ## [Unreleased]
 
+## [v1.14.2] - 2023-10-19
+
 ### Bugs
+
+ * Fix `console` command when accessing China/US Gov #634
+
+### Changes
+
+ * Now use region/partition specific API Endpoint when retrieving AWS Console URLs from
+    IAM Identity Center #634
+
+## [v1.14.1] - 2023-10-17
+
+### Bugs
+
+ * Fix bug where JsonStore was not being created #612
+ * Fix fish shell completion
+ * Do not fall back to interactive prompt when provided CLI args #567
 
 ### New Features
 
@@ -36,7 +53,7 @@
  * ECS Server now includes `RoleArn` in output #561
  * Fix selection of default browser in advanced guided setup #563
 
-### Changes 
+### Changes
 
  * ECS Server API is now more RESTful and fully document the API
  * Default profile `AWS_CONTAINER_CREDENTIALS_FULL_URI` is now `http://localhost:4144/`
@@ -614,7 +631,9 @@
 
 Initial release
 
-[Unreleased]: https://github.com/synfinatic/aws-sso-cli/compare/v1.14.0...main
+[Unreleased]: https://github.com/synfinatic/aws-sso-cli/compare/v1.14.2...main
+[v1.14.2]: https://github.com/synfinatic/aws-sso-cli/releases/tag/v1.14.2
+[v1.14.1]: https://github.com/synfinatic/aws-sso-cli/releases/tag/v1.14.1
 [v1.14.0]: https://github.com/synfinatic/aws-sso-cli/releases/tag/v1.14.0
 [v1.13.1]: https://github.com/synfinatic/aws-sso-cli/releases/tag/v1.13.0
 [v1.13.0]: https://github.com/synfinatic/aws-sso-cli/releases/tag/v1.12.0

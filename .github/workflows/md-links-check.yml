@@ -1,12 +1,11 @@
-name: Check Markdown Links
+name: Markdown Links
 
 on: 
   push:
     branches:
       - main
   pull_request:
-    branches:
-      - main
+    types: [opened, synchronize, reopened]
     paths:
       - '.github/**'
       - 'docs/**'
