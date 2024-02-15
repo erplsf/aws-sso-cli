@@ -11,11 +11,11 @@ jobs:
       pull-requests: write
     steps:
       # https://github.com/marketplace/actions/close-stale-issues
-      - uses: actions/stale@v8
+      - uses: actions/stale@v9
         with:
           any-of-issue-labels: waiting-for-customer
           stale-label: stale
-          exempt-pr-labels: exempt
+          exempt-pr-labels: exempt,dependencies
           exempt-issue-labels: exempt
           days-before-issue-stale: 14
           days-before-issue-close: 14

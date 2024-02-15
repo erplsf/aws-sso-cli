@@ -19,13 +19,13 @@ require (
 	github.com/stretchr/testify v1.8.4
 	github.com/synfinatic/gotable v0.0.3
 	github.com/willabides/kongplete v0.2.0
-	golang.org/x/crypto v0.14.0 // indirect
+	golang.org/x/crypto v0.17.0 // indirect
 )
 
 require (
 	github.com/aws/aws-sdk-go-v2 v1.21.2
 	github.com/riywo/loginshell v0.0.0-20200815045211-7d26008be1ab
-	golang.org/x/term v0.14.0
+	golang.org/x/term v0.16.0
 	gopkg.in/ini.v1 v1.67.0
 )
 
@@ -34,7 +34,7 @@ require (
 	github.com/Masterminds/semver/v3 v3.2.0 // indirect
 	github.com/chzyer/readline v0.0.0-20180603132655-2972be24d48e // indirect
 	github.com/danieljoos/wincred v1.1.2 // indirect
-	github.com/dvsekhvalnov/jose2go v1.5.0 // indirect
+	github.com/dvsekhvalnov/jose2go v1.6.0 // indirect
 	github.com/fatih/color v1.10.0 // indirect
 	github.com/fsnotify/fsnotify v1.4.9 // indirect
 	github.com/godbus/dbus v0.0.0-20190726142602-4481cbc300e2 // indirect
@@ -58,7 +58,7 @@ require (
 	github.com/spf13/cast v1.3.1 // indirect
 
 	// see: https://github.com/sirupsen/logrus/issues/1275
-	golang.org/x/sys v0.14.0 // indirect
+	golang.org/x/sys v0.16.0 // indirect
 	golang.org/x/xerrors v0.0.0-20200804184101-5ec99f83aff1 // indirect
 
 	// see: https://github.com/go-yaml/yaml/issues/666
@@ -74,7 +74,7 @@ require (
 	github.com/aws/aws-sdk-go-v2/service/sso v1.15.2
 	github.com/aws/aws-sdk-go-v2/service/ssooidc v1.17.3
 	github.com/aws/aws-sdk-go-v2/service/sts v1.23.2
-	golang.org/x/net v0.17.0
+	golang.org/x/net v0.19.0
 )
 
 require (
