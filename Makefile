@@ -1,4 +1,4 @@
-PROJECT_VERSION := 1.14.3
+PROJECT_VERSION := 1.15.1
 DOCKER_REPO     := synfinatic
 PROJECT_NAME    := aws-sso
 
@@ -152,7 +152,10 @@ test: vet unittest lint test-homebrew ## Run important tests
 
 precheck: test test-fmt test-tidy ## Run all tests that happen in a PR
 
-# run everything but `lint` because that runs via it's own workflow
+govulncheck:  ## Run govulncheck
+	@govulncheck ./...
+
+# run everything but `lint`and govulncheck because they run seperately
 .build-tests: vet unittest test-tidy test-fmt test-homebrew
 
 $(DIST_DIR):

@@ -2,6 +2,24 @@
 
 ## [Unreleased]
 
+## [v1.15.1] - 2024-04-30
+
+### New Features 
+
+ * Add helper aliases for fish shell #361
+
+### Changes
+
+ * Builds now run govulncheck
+
+## [v1.15.0] - 2024-04-05
+
+### New Features
+
+ * Add `aws-sso-cli completion --source` flag to generate completion script and
+   print to stdout. #779
+ * UrlExecCommand now supports commands in `~` and the `$HOME` environment variable. #816
+
 ## [v1.14.3] - 2024-01-15
 
 ### Bugs
@@ -642,7 +660,9 @@
 
 Initial release
 
-[Unreleased]: https://github.com/synfinatic/aws-sso-cli/compare/v1.14.3...main
+[Unreleased]: https://github.com/synfinatic/aws-sso-cli/compare/v1.15.1...main
+[v1.15.1]: https://github.com/synfinatic/aws-sso-cli/releases/tag/v1.15.1
+[v1.15.0]: https://github.com/synfinatic/aws-sso-cli/releases/tag/v1.15.0
 [v1.14.3]: https://github.com/synfinatic/aws-sso-cli/releases/tag/v1.14.3
 [v1.14.2]: https://github.com/synfinatic/aws-sso-cli/releases/tag/v1.14.2
 [v1.14.1]: https://github.com/synfinatic/aws-sso-cli/releases/tag/v1.14.1
