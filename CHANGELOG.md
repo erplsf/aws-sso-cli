@@ -2,9 +2,40 @@
 
 ## [Unreleased]
 
+### New Features
+
+ * Add support for HTTP Auth/`AWS_CONTAINER_AUTHORIZATION_TOKEN` env variable #516
+ * Add support for HTTPS #518
+
+## [v1.16.1] - 2024-06-13
+
+### Bugs
+
+ * Fix homebrew build on macOS
+ * `credentials --profiles` is now `credentials --profile` to conform to standard
+
+## [v1.16.0] - 2024-06-12
+
+### New Features
+
+ * Add `credentials` command #867
+ * Add auto-complete for `aws-sso-profile` for fish
+
+### Changes
+
+ * Use RFC3339 for AWS_SSO_SESSION_EXPIRATION #837
+ * Update AWS SDK libraries and other dependencies
+
+### Bugs
+
+ * Fix tab completion for `--profile` flag with fish
+ * `config-profiles` now works for multiple AWS SSO instances #696, #740
+ * Disable linker warnings on macOS with -race flag
+ * `aws-sso-profile` returns usage when run without args #836
+
 ## [v1.15.1] - 2024-04-30
 
-### New Features 
+### New Features
 
  * Add helper aliases for fish shell #361
 
@@ -660,7 +691,9 @@
 
 Initial release
 
-[Unreleased]: https://github.com/synfinatic/aws-sso-cli/compare/v1.15.1...main
+[Unreleased]: https://github.com/synfinatic/aws-sso-cli/compare/v1.16.1...main
+[v1.16.1]: https://github.com/synfinatic/aws-sso-cli/releases/tag/v1.16.1
+[v1.16.0]: https://github.com/synfinatic/aws-sso-cli/releases/tag/v1.16.0
 [v1.15.1]: https://github.com/synfinatic/aws-sso-cli/releases/tag/v1.15.1
 [v1.15.0]: https://github.com/synfinatic/aws-sso-cli/releases/tag/v1.15.0
 [v1.14.3]: https://github.com/synfinatic/aws-sso-cli/releases/tag/v1.14.3

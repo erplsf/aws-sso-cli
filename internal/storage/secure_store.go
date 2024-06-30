@@ -38,4 +38,15 @@ type SecureStorage interface {
 	GetStaticCredentials(string, *StaticCredentials) error
 	DeleteStaticCredentials(string) error
 	ListStaticCredentials() []string
+
+	// ECS Server Bearer Token
+	SaveEcsBearerToken(string) error
+	GetEcsBearerToken() (string, error)
+	DeleteEcsBearerToken() error
+
+	// ECS Server SSL Cert
+	SaveEcsSslKeyPair([]byte, []byte) error
+	DeleteEcsSslKeyPair() error
+	GetEcsSslCert() (string, error)
+	GetEcsSslKey() (string, error)
 }

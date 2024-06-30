@@ -25,6 +25,7 @@ import (
 
 	"github.com/alecthomas/kong"
 	"github.com/posener/complete"
+
 	// "github.com/davecgh/go-spew/spew"
 	"github.com/sirupsen/logrus"
 	"github.com/synfinatic/aws-sso-cli/internal/awscreds"
@@ -106,7 +107,7 @@ var DEFAULT_CONFIG map[string]interface{} = map[string]interface{}{
 type CLI struct {
 	// Common Arguments
 	Browser       string `kong:"short='b',help='Path to browser to open URLs with',env='AWS_SSO_BROWSER'"`
-	ConfigFile    string `kong:"name='config',default='${CONFIG_FILE}',help='Config file',env='AWS_SSO_CONFIG'"`
+	ConfigFile    string `kong:"name='config',default='${CONFIG_FILE}',help='Config file',env='AWS_SSO_CONFIG',predict='allFiles'"`
 	LogLevel      string `kong:"short='L',name='level',help='Logging level [error|warn|info|debug|trace] (default: warn)'"`
 	Lines         bool   `kong:"help='Print line number in logs'"`
 	UrlAction     string `kong:"short='u',help='How to handle URLs [clip|exec|open|print|printurl|granted-containers|open-url-in-container] (default: open)'"`
@@ -118,6 +119,7 @@ type CLI struct {
 	// Commands
 	Cache          CacheCmd          `kong:"cmd,help='Force reload of cached AWS SSO role info and config.yaml'"`
 	Console        ConsoleCmd        `kong:"cmd,help='Open AWS Console using specificed AWS role/profile'"`
+	Credentials    CredentialsCmd    `kong:"cmd,help='Generate static AWS credentials for use with AWS CLI'"`
 	Default        DefaultCmd        `kong:"cmd,hidden,default='1'"` // list command without args
 	Eval           EvalCmd           `kong:"cmd,help='Print AWS environment vars for use with eval $(aws-sso eval ...)'"`
 	Exec           ExecCmd           `kong:"cmd,help='Execute command using specified IAM role in a new shell'"`
@@ -165,7 +167,7 @@ func main() {
 	switch ctx.Command() {
 	case "version":
 		if err = ctx.Run(&runCtx); err != nil {
-			log.Fatalf("Error running command: %s", err.Error())
+			log.Fatalf("%s", err.Error())
 		}
 		return
 	}
@@ -217,7 +219,7 @@ func main() {
 
 	err = ctx.Run(&runCtx)
 	if err != nil {
-		log.Fatalf("Error running command: %s", err.Error())
+		log.Fatalf("%s", err.Error())
 	}
 }
 
@@ -250,6 +252,7 @@ func parseArgs(cli *CLI) (*kong.Context, sso.OverrideSettings) {
 				"region":    p.RegionComplete(),
 				"role":      p.RoleComplete(),
 				"sso":       p.SsoComplete(),
+				"allFiles":  complete.PredictFiles("*"),
 			},
 		),
 	)

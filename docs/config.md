@@ -303,6 +303,13 @@ UrlExecCommand:
 
 ##### Open URL in Firefox Container
 
+Opens each IAM Role in a unique Firefox Container using either
+[Open Url in Container](
+https://addons.mozilla.org/en-US/firefox/addon/open-url-in-container/) or the
+[Firefox Multi-Account Containers](
+https://addons.mozilla.org/en-US/firefox/addon/multi-account-containers/)
+Firefox plugins.
+
 ```yaml
 UrlAction: open-url-in-container
 UrlExecCommand:
@@ -310,7 +317,8 @@ UrlExecCommand:
     - "%s"
 ```
 
-###### Use custom shell script
+##### Use custom shell script
+
 ```yaml
 UrlAction: exec
 UrlExecCommand:
@@ -569,7 +577,7 @@ advanced debugging.
 
  * `file` - Encrypted local files (OS agnostic and default on Linux)
  * `keychain` - macOS [Keychain](https://support.apple.com/guide/mac-help/use-keychains-to-store-passwords-mchlf375f392/mac) (default on macOS)
- * `kwallet` - [KDE Wallet](https://utils.kde.org/projects/kwalletmanager/)
+ * `kwallet` - [KDE Wallet](https://github.com/KDE/kwalletmanager)
  * `pass` - [pass](https://www.passwordstore.org) (uses GPG on backend)
  * `secret-service` - Freedesktop.org [Secret Service](https://specifications.freedesktop.org/secret-service/latest/re01.html)
  * `wincred` - Windows [Credential Manager](https://support.microsoft.com/en-us/windows/accessing-credential-manager-1b5c916a-6a16-889f-8581-fc16e8165ac0) (default on Windows)

@@ -22,6 +22,56 @@ Will start the service on `localhost:4144`.   For security purposes, the `aws-ss
 ECS Server will _only_ run on localhost/127.0.0.1.  You may select an alternative
 port via the `--port` flag or setting the `AWS_SSO_ECS_PORT` environment variable.
 
+### ECS Server security
+
+The ECS Server supports both SSL/TLS encryption as well as HTTP Authentication.
+Together, they allow using the `aws-sso` ECS Server on multi-user systems in a
+secure manner.
+
+**Important:** Failure to configure HTTP Authentication _and_ SSL/TLS encryption
+risks any user on the system running the `aws-sso` ECS Server access to your
+AWS IAM authentication tokens.
+
+You will need to create an SSL certificate/key pair in PKCS#8/PEM format.  Typically,
+this will be a self-signed certificate which can be generated thusly:
+
+```bash
+cat <<-EOF > config.ssl
+[dn]
+CN=localhost
+[req]
+distinguished_name = dn
+[EXT]
+subjectAltName=DNS:localhost,IP:127.0.0.1
+keyUsage=digitalSignature
+extendedKeyUsage=serverAuth
+EOF
+
+openssl req -x509 -out localhost.crt -keyout localhost.key \
+  -newkey rsa:2048 -nodes -sha256 -subj '/CN=localhost' -extensions EXT -config config.ssl
+
+rm config.ssl
+```
+
+Once you have your certificate and private key, you will need to save them into the
+`aws-sso` secure store:
+
+```bash
+aws-sso ecs cert --private-key localhost.key --cert-chain localhost.crt
+```
+
+**Important:** At this point, you should delete the private key file `localhost.key` for security.
+
+The `localhost.crt` file will be automatically trusted by the `aws-sso` client if it
+uses the same secure store.  Otherwise, you will need to copy the `localhost.crt` file
+to the other host and either add it to the local secure store, or add it to the
+appropriate SSL CA trust store for your Python, Java, GoLang, etc AWS SDK.
+
+```bash
+# add the certificate to another aws-sso secure store
+aws-sso ecs cert --cert-chain localhost.crt
+```
+
 ## Environment variables
 
 ### AWS\_CONTAINER\_CREDENTIALS\_FULL\_URI
@@ -30,11 +80,19 @@ AWS clients and `aws-sso` should use:
 
 `AWS_CONTAINER_CREDENTIALS_FULL_URI=http://localhost:4144/`
 
+**Note:** If you have configured an SSL certificate as described above, use `https://localhost:4144`.
+
 ### AWS\_CONTAINER\_CREDENTIALS\_RELATIVE\_URI
 
 It is important to _not_ set `AWS_CONTAINER_CREDENTIALS_RELATIVE_URI`
 as that takes precidence for `AWS_CONTAINER_CREDENTIALS_FULL_URI` and it is not
 compatible with `aws-sso`.
+
+### AWS\_CONTAINER\_AUTHORIZATION\_TOKEN
+
+Specify the HTTP Authentication token used to authenticate communication between the
+ECS Server and clients (aws-sso and AWS SDK/CLI).  Typically the value should be specified
+in the format of `Bearer <auth token value>`.
 
 ## Selecting a role via ECS Server
 
@@ -54,6 +112,8 @@ for all AWS Client SDKs using it.
 Ensure you have exported the following shell ENV variable:
 
 `export AWS_CONTAINER_CREDENTIALS_FULL_URI=http://localhost:4144/creds`
+
+**Note:** If you have configured an SSL certificate as described above, use `https://localhost:4144/creds`.
 
 Then just:
 
@@ -100,8 +160,10 @@ Accessing the individual credentials is done via the `profile` query parameter:
 
 `export AWS_CONTAINER_CREDENTIALS_FULL_URI=http://localhost:4144/slot/ExampleProfileName`
 
-Would utilize the `ExampleProfileName` role.  Note that the `profile` parameter
-value must be URL Escaped.
+**Note:** If you have configured an SSL certificate as described above, use `httpss://localhost:4144/slot/ExampleProfileName`.
+
+Would utilize the `ExampleProfileName` role.  Note that the `profile` value
+value in the URL must be [URL Escaped](https://www.w3schools.com/tags/ref_urlencode.ASP).
 
 ### Unloading
 
@@ -124,8 +186,8 @@ The ECS Server API endpoint generates errors with the following JSON format:
 ## Authentication
 
 Support for the [AWS\_CONTAINER\_AUTHORIZATION\_TOKEN](
-https://github.com/synfinatic/aws-sso-cli/issues/516) is TBD.  Please vote for
-this feature if you want it!
+https://docs.aws.amazon.com/sdkref/latest/guide/feature-container-credentials.html) environment
+variable is supported.
 
 ## HTTPS Transport
 
@@ -137,6 +199,7 @@ is TBD.  Please vote for this feature if you want it!
 ### Default credentials
 
 #### GET /
+
 Fetch default credentials.
 
 ```json
@@ -150,6 +213,7 @@ Fetch default credentials.
 ```
 
 #### GET /profile
+
 Fetch profile name of the default credentials.
 
 ```json
@@ -163,6 +227,7 @@ Fetch profile name of the default credentials.
 ```
 
 #### PUT /
+
 Upload default credentials.
 
 ```json
@@ -173,6 +238,7 @@ Upload default credentials.
 ```
 
 #### DELETE /
+
 Delete default credentials.
 
 ```json
@@ -185,6 +251,7 @@ Delete default credentials.
 ### Slotted credentials
 
 #### GET /slot
+
 Fetch list of default credentials.
 
 ```json
@@ -201,6 +268,7 @@ Fetch list of default credentials.
 ```
 
 #### GET /slot/&lt;profile&gt;
+
 Fetch credentials of the named profile.
 
 ```json
@@ -214,6 +282,7 @@ Fetch credentials of the named profile.
 ```
 
 #### PUT /slot/&lt;profile&gt;
+
 Upload credentials of the named profile.
 
 ```json
@@ -224,6 +293,7 @@ Upload credentials of the named profile.
 ```
 
 #### DELETE /slot/&lt;profile&gt;
+
 Delete credentials of the named profile.
 
 ```json
@@ -234,6 +304,7 @@ Delete credentials of the named profile.
 ```
 
 #### DELETE /slot
+
 Delete all named credentials.
 
 ```json

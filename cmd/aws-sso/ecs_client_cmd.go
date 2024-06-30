@@ -69,7 +69,15 @@ func (cc *EcsLoadCmd) Run(ctx *RunContext) error {
 }
 
 func (cc *EcsProfileCmd) Run(ctx *RunContext) error {
-	c := client.NewECSClient(ctx.Cli.Ecs.Profile.Port)
+	clientCert, err := ctx.Store.GetEcsSslCert()
+	if err != nil {
+		return err
+	}
+	bearerToken, err := ctx.Store.GetEcsBearerToken()
+	if err != nil {
+		return err
+	}
+	c := client.NewECSClient(ctx.Cli.Ecs.Profile.Port, bearerToken, clientCert)
 
 	profile, err := c.GetProfile()
 	if err != nil {
@@ -77,7 +85,7 @@ func (cc *EcsProfileCmd) Run(ctx *RunContext) error {
 	}
 
 	if profile.ProfileName == "" {
-		return fmt.Errorf("No profile loaded in ECS Server.")
+		return fmt.Errorf("no profile loaded in ECS Server")
 	}
 
 	profiles := []ecs.ListProfilesResponse{
@@ -87,7 +95,15 @@ func (cc *EcsProfileCmd) Run(ctx *RunContext) error {
 }
 
 func (cc *EcsUnloadCmd) Run(ctx *RunContext) error {
-	c := client.NewECSClient(ctx.Cli.Ecs.Unload.Port)
+	clientCert, err := ctx.Store.GetEcsSslCert()
+	if err != nil {
+		return err
+	}
+	bearerToken, err := ctx.Store.GetEcsBearerToken()
+	if err != nil {
+		return err
+	}
+	c := client.NewECSClient(ctx.Cli.Ecs.Unload.Port, bearerToken, clientCert)
 
 	return c.Delete(ctx.Cli.Ecs.Unload.Profile)
 }
@@ -115,14 +131,30 @@ func ecsLoadCmd(ctx *RunContext, awssso *sso.AWSSSO, accountId int64, role strin
 	}
 
 	// do something
-	c := client.NewECSClient(ctx.Cli.Ecs.Load.Port)
+	clientCert, err := ctx.Store.GetEcsSslCert()
+	if err != nil {
+		return err
+	}
+	bearerToken, err := ctx.Store.GetEcsBearerToken()
+	if err != nil {
+		return err
+	}
+	c := client.NewECSClient(ctx.Cli.Ecs.Load.Port, bearerToken, clientCert)
 
 	log.Debugf("%s", spew.Sdump(rFlat))
 	return c.SubmitCreds(creds, rFlat.Profile, ctx.Cli.Ecs.Load.Slotted)
 }
 
 func (cc *EcsListCmd) Run(ctx *RunContext) error {
-	c := client.NewECSClient(ctx.Cli.Ecs.Profile.Port)
+	clientCert, err := ctx.Store.GetEcsSslCert()
+	if err != nil {
+		return err
+	}
+	bearerToken, err := ctx.Store.GetEcsBearerToken()
+	if err != nil {
+		return err
+	}
+	c := client.NewECSClient(ctx.Cli.Ecs.Profile.Port, bearerToken, clientCert)
 
 	profiles, err := c.ListProfiles()
 	if err != nil {

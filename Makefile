@@ -1,4 +1,4 @@
-PROJECT_VERSION := 1.15.1
+PROJECT_VERSION := 1.17.0
 DOCKER_REPO     := synfinatic
 PROJECT_NAME    := aws-sso
 
@@ -34,6 +34,12 @@ DESCRIPTION               := AWS SSO CLI
 BUILDINFOS                ?= $(shell date +%FT%T%z)$(BUILDINFOSDET)
 LDFLAGS                   := -X "main.Version=$(PROJECT_VERSION)" -X "main.Delta=$(PROJECT_DELTA)" -X "main.Buildinfos=$(BUILDINFOS)" -X "main.Tag=$(PROJECT_TAG)" -X "main.CommitID=$(PROJECT_COMMIT)"
 OUTPUT_NAME               := $(DIST_DIR)$(PROJECT_NAME)-$(PROJECT_VERSION)  # default for current platform
+
+#ifeq ($(GOOS),darwin)
+# https://github.com/golang/go/issues/61229#issuecomment-1988965927
+# this doesn't work for homebrew with clang it seems: https://github.com/Homebrew/homebrew-core/pull/174439
+#LDFLAGS := $(LDFLAGS) -extldflags=-Wl,-ld_classic
+#endif
 
 # go build flags
 GOBFLAGS                  := -trimpath
@@ -136,7 +142,7 @@ debug: .prepare ## Run debug in dlv
 
 .PHONY: unittest
 unittest: ## Run go unit tests
-	go test -race -covermode=atomic -coverprofile=coverage.out  ./...
+	go test -ldflags='$(LDFLAGS)' -covermode=atomic -coverprofile=coverage.out  ./...
 
 .PHONY: test-race
 test-race: ## Run `go test -race` on the code
