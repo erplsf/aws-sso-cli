@@ -2,7 +2,7 @@ package server
 
 /*
  * AWS SSO CLI
- * Copyright (c) 2021-2023 Aaron Turner  <synfinatic at gmail dot com>
+ * Copyright (c) 2021-2024 Aaron Turner  <synfinatic at gmail dot com>
  *
  * This program is free software: you can redistribute it
  * and/or modify it under the terms of the GNU General Public License as
@@ -23,11 +23,21 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	"os"
+	"path/filepath"
 
 	// "github.com/davecgh/go-spew/spew"
 	"github.com/synfinatic/aws-sso-cli/internal/ecs"
+	"github.com/synfinatic/aws-sso-cli/internal/logger"
 	"github.com/synfinatic/aws-sso-cli/internal/storage"
+	"github.com/synfinatic/flexlog"
 )
+
+var log flexlog.FlexLogger
+
+func init() {
+	log = logger.GetLogger()
+}
 
 type EcsServer struct {
 	listener     net.Listener
@@ -35,6 +45,8 @@ type EcsServer struct {
 	server       http.Server
 	DefaultCreds *ecs.ECSClientRequest
 	slottedCreds map[string]*ecs.ECSClientRequest
+	privateKey   string
+	certChain    string
 }
 
 type ExpiredCredentials struct{}
@@ -44,7 +56,7 @@ func (e *ExpiredCredentials) Error() string {
 }
 
 // NewEcsServer creates a new ECS Server
-func NewEcsServer(ctx context.Context, authToken string, listen net.Listener) (*EcsServer, error) {
+func NewEcsServer(ctx context.Context, authToken string, listen net.Listener, privateKey, certChain string) (*EcsServer, error) {
 	e := &EcsServer{
 		listener:  listen,
 		authToken: authToken,
@@ -52,6 +64,8 @@ func NewEcsServer(ctx context.Context, authToken string, listen net.Listener) (*
 			Creds: &storage.RoleCredentials{},
 		},
 		slottedCreds: map[string]*ecs.ECSClientRequest{},
+		privateKey:   privateKey,
+		certChain:    certChain,
 	}
 
 	router := http.NewServeMux()
@@ -67,7 +81,11 @@ func NewEcsServer(ctx context.Context, authToken string, listen net.Listener) (*
 	router.Handle(ecs.DEFAULT_ROUTE, DefaultHandler{
 		ecs: e,
 	})
-	e.server.Handler = withLogging(WithAuthorizationCheck(e.authToken, router.ServeHTTP))
+	authTokenHeader := ""
+	if e.authToken != "" {
+		authTokenHeader = "Bearer " + e.authToken
+	}
+	e.server.Handler = withLogging(WithAuthorizationCheck(authTokenHeader, router.ServeHTTP))
 
 	return e, nil
 }
@@ -83,7 +101,7 @@ func (e *EcsServer) DeleteSlottedCreds(profile string) error {
 
 // getCreds fetches the named profile from the cache.
 func (e *EcsServer) GetSlottedCreds(profile string) (*ecs.ECSClientRequest, error) {
-	log.Debugf("fetching creds for profile: %s", profile)
+	log.Debug("fetching creds", "profile", profile)
 	c, ok := e.slottedCreds[profile]
 	if !ok {
 		return c, fmt.Errorf("%s is not found", profile)
@@ -107,7 +125,7 @@ func (e *EcsServer) ListSlottedCreds() []ecs.ListProfilesResponse {
 
 	for _, cr := range e.slottedCreds {
 		if cr.Creds.Expired() {
-			log.Errorf("Skipping expired creds for %s", cr.ProfileName)
+			log.Error("Skipping expired creds", "profile", cr.ProfileName)
 			continue
 		}
 
@@ -119,16 +137,36 @@ func (e *EcsServer) ListSlottedCreds() []ecs.ListProfilesResponse {
 
 // BaseURL returns our the base URL for all requests
 func (e *EcsServer) BaseURL() string {
-	return fmt.Sprintf("http://%s", e.listener.Addr().String())
-}
-
-// AuthToken returns our authToken for authentication
-func (e *EcsServer) AuthToken() string {
-	return e.authToken
+	proto := "http"
+	if e.privateKey != "" && e.certChain != "" {
+		proto = "https"
+	}
+	return fmt.Sprintf("%s://%s", proto, e.listener.Addr().String())
 }
 
 // Serve starts the sever and blocks
 func (e *EcsServer) Serve() error {
+	if e.privateKey != "" && e.certChain != "" {
+		// Go sucks... have to pass the key and cert as _files_ not strings.  Why???
+		dname, err := os.MkdirTemp("", "aws-sso")
+		if err != nil {
+			return err
+		}
+		defer os.RemoveAll(dname)
+
+		certFile := filepath.Join(dname, "cert.pem")
+		err = os.WriteFile(certFile, []byte(e.certChain), 0600)
+		if err != nil {
+			return err
+		}
+		keyFile := filepath.Join(dname, "key.pem")
+		err = os.WriteFile(keyFile, []byte(e.privateKey), 0600)
+		if err != nil {
+			return err
+		}
+
+		return e.server.ServeTLS(e.listener, certFile, keyFile)
+	}
 	return e.server.Serve(e.listener)
 }
 
@@ -141,4 +179,8 @@ func WithAuthorizationCheck(authToken string, next http.HandlerFunc) http.Handle
 		}
 		next.ServeHTTP(w, r)
 	}
+}
+
+func (e *EcsServer) Close() {
+	e.server.Close()
 }

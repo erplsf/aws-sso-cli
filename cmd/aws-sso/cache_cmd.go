@@ -2,7 +2,7 @@ package main
 
 /*
  * AWS SSO CLI
- * Copyright (c) 2021-2023 Aaron Turner  <synfinatic at gmail dot com>
+ * Copyright (c) 2021-2024 Aaron Turner  <synfinatic at gmail dot com>
  *
  * This program is free software: you can redistribute it
  * and/or modify it under the terms of the GNU General Public License as
@@ -20,31 +20,55 @@ package main
 
 import (
 	"fmt"
+
+	"github.com/synfinatic/aws-sso-cli/internal/awsconfig"
+	"github.com/synfinatic/aws-sso-cli/internal/url"
 )
 
-type CacheCmd struct{}
+type CacheCmd struct {
+	NoConfigCheck bool `kong:"help='Disable automatic ~/.aws/config updates'"`
+	Threads       int  `kong:"help='Override number of threads for talking to AWS',default=${DEFAULT_THREADS}"`
+}
+
+// AfterApply determines if SSO auth token is required
+func (c CacheCmd) AfterApply(runCtx *RunContext) error {
+	runCtx.Auth = AUTH_REQUIRED
+	return nil
+}
 
 func (cc *CacheCmd) Run(ctx *RunContext) error {
-	awssso := doAuth(ctx)
 	s, err := ctx.Settings.GetSelectedSSO(ctx.Cli.SSO)
 	if err != nil {
-		log.Fatalf("%s", err.Error())
+		log.Fatal("unable to select SSO instance", "sso", ctx.Cli.SSO, "error", err.Error())
 	}
 
 	ssoName, err := ctx.Settings.GetSelectedSSOName(ctx.Cli.SSO)
 	if err != nil {
-		log.Fatalf(err.Error())
+		log.Fatal("unable to get name for SSO instance", "sso", ctx.Cli.SSO, "error", err.Error())
 	}
 
-	err = ctx.Settings.Cache.Refresh(awssso, s, ssoName)
+	added, deleted, err := ctx.Settings.Cache.Refresh(AwsSSO, s, ssoName, ctx.Cli.Cache.Threads)
 	if err != nil {
-		return fmt.Errorf("Unable to refresh role cache: %s", err.Error())
+		return fmt.Errorf("unable to refresh role cache: %s", err.Error())
 	}
 	ctx.Settings.Cache.PruneSSO(ctx.Settings)
 
 	err = ctx.Settings.Cache.Save(true)
 	if err != nil {
-		return fmt.Errorf("Unable to save role cache: %s", err.Error())
+		return fmt.Errorf("unable to save role cache: %s", err.Error())
+	}
+
+	if added > 0 || deleted > 0 {
+		log.Info("Updated cache", "added", added, "deleted", deleted)
+		// should we update our config??
+		if !ctx.Cli.Cache.NoConfigCheck && ctx.Settings.AutoConfigCheck {
+			if ctx.Settings.ConfigProfilesUrlAction != url.ConfigProfilesUndef {
+				err := awsconfig.UpdateAwsConfig(ctx.Settings, "", true, false)
+				if err != nil {
+					log.Error("Unable to auto-update aws config file", "error", err.Error())
+				}
+			}
+		}
 	}
 
 	return nil

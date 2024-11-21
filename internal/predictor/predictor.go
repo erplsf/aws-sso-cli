@@ -2,7 +2,7 @@ package predictor
 
 /*
  * AWS SSO CLI
- * Copyright (c) 2021-2023 Aaron Turner  <synfinatic at gmail dot com>
+ * Copyright (c) 2021-2024 Aaron Turner  <synfinatic at gmail dot com>
  *
  * This program is free software: you can redistribute it
  * and/or modify it under the terms of the GNU General Public License as
@@ -25,9 +25,17 @@ import (
 	// "github.com/davecgh/go-spew/spew"
 	"github.com/goccy/go-yaml"
 	"github.com/posener/complete"
+	"github.com/synfinatic/aws-sso-cli/internal/logger"
+	"github.com/synfinatic/aws-sso-cli/internal/sso"
 	"github.com/synfinatic/aws-sso-cli/internal/utils"
-	"github.com/synfinatic/aws-sso-cli/sso"
+	"github.com/synfinatic/flexlog"
 )
+
+var log flexlog.FlexLogger
+
+func init() {
+	log = logger.GetLogger()
+}
 
 type Predictor struct {
 	configFile string
@@ -44,6 +52,7 @@ func NewPredictor(cacheFile, configFile string) *Predictor {
 	// select our SSO from a CLI flag or env var, else use our default
 	override := sso.OverrideSettings{
 		DefaultSSO: getSSOValue(),
+		LogLevel:   "warn",
 	}
 
 	p := Predictor{
@@ -90,7 +99,7 @@ func (p *Predictor) newPredictor(s *sso.Settings, c *sso.Cache) *Predictor {
 			uniqueRoles[roleName] = true
 			profile, err := rFlat.ProfileName(s)
 			if err != nil {
-				log.Warnf(err.Error())
+				log.Warn("unable to find Profile for ARN", "arn", rFlat.Arn, "error", err.Error())
 				continue
 			}
 			p.profiles = append(p.profiles, profile)
@@ -158,7 +167,7 @@ func (p *Predictor) SsoComplete() complete.Predictor {
 				ssos = append(ssos, sso)
 			}
 		} else {
-			log.Panicf("error: %s", err.Error())
+			log.Fatal("unable to process file", "file", p.configFile, "error", err.Error())
 		}
 	}
 	return complete.PredictSet(ssos...)
@@ -171,7 +180,12 @@ func (p *Predictor) ProfileComplete() complete.Predictor {
 	// The `:` character is considered a word delimiter by bash complete
 	// so we need to escape them
 	for _, x := range p.profiles {
-		profiles = append(profiles, strings.ReplaceAll(x, ":", "\\:"))
+		if os.Getenv("__NO_ESCAPE_COLONS") == "" {
+			profiles = append(profiles, strings.ReplaceAll(x, ":", "\\:"))
+		} else {
+			// fish doesn't treat colons as word delimiters
+			profiles = append(profiles, x)
+		}
 	}
 
 	return complete.PredictSet(profiles...)

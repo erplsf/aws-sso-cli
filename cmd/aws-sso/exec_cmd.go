@@ -2,7 +2,7 @@ package main
 
 /*
  * AWS SSO CLI
- * Copyright (c) 2021-2023 Aaron Turner  <synfinatic at gmail dot com>
+ * Copyright (c) 2021-2024 Aaron Turner  <synfinatic at gmail dot com>
  *
  * This program is free software: you can redistribute it
  * and/or modify it under the terms of the GNU General Public License as
@@ -25,61 +25,65 @@ import (
 	"os/exec"
 	"runtime"
 
+	"github.com/synfinatic/aws-sso-cli/internal/sso"
 	"github.com/synfinatic/aws-sso-cli/internal/utils"
-	"github.com/synfinatic/aws-sso-cli/sso"
 )
 
 type ExecCmd struct {
 	// AWS Params
-	Arn       string `kong:"short='a',help='ARN of role to assume',env='AWS_SSO_ROLE_ARN',predictor='arn'"`
-	AccountId int64  `kong:"name='account',short='A',help='AWS AccountID of role to assume',env='AWS_SSO_ACCOUNT_ID',predictor='accountId'"`
-	Role      string `kong:"short='R',help='Name of AWS Role to assume',env='AWS_SSO_ROLE_NAME',predictor='role'"`
-	Profile   string `kong:"short='p',help='Name of AWS Profile to assume',predictor='profile'"`
-	NoCache   bool   `kong:"help='Do not use cache'"`
-	NoRegion  bool   `kong:"short='n',help='Do not set AWS_DEFAULT_REGION from config.yaml'"`
+	Arn        string `kong:"short='a',help='ARN of role to assume',env='AWS_SSO_ROLE_ARN',predictor='arn'"`
+	AccountId  int64  `kong:"name='account',short='A',help='AWS AccountID of role to assume',env='AWS_SSO_ACCOUNT_ID',predictor='accountId'"`
+	Role       string `kong:"short='R',help='Name of AWS Role to assume',env='AWS_SSO_ROLE_NAME',predictor='role'"`
+	Profile    string `kong:"short='p',help='Name of AWS Profile to assume',predictor='profile'"`
+	NoRegion   bool   `kong:"short='n',help='Do not set AWS_DEFAULT_REGION from config.yaml'"`
+	STSRefresh bool   `kong:"help='Force refresh of STS Token Credentials'"`
 
 	// Exec Params
 	Cmd  string   `kong:"arg,optional,name='command',help='Command to execute',env='SHELL'"`
 	Args []string `kong:"arg,optional,passthrough,name='args',help='Associated arguments for the command'"`
 }
 
+// AfterApply determines if SSO auth token is required
+func (e ExecCmd) AfterApply(runCtx *RunContext) error {
+	runCtx.Auth = AUTH_REQUIRED
+	return nil
+}
+
 func (cc *ExecCmd) Run(ctx *RunContext) error {
 	err := checkAwsEnvironment()
 	if err != nil {
-		log.WithError(err).Fatalf("Unable to continue")
+		log.Fatal("Unable to continue", "error", err.Error())
 	}
 
-	if runtime.GOOS == "windows" && ctx.Cli.Exec.Cmd == "" {
-		// Windows doesn't set $SHELL, so default to CommandPrompt
-		ctx.Cli.Exec.Cmd = "cmd.exe"
+	if ctx.Cli.Exec.Cmd == "" {
+		if runtime.GOOS == "windows" {
+			// Windows doesn't set $SHELL, so default to CommandPrompt
+			ctx.Cli.Exec.Cmd = "cmd.exe"
+		} else if os.Getenv("XONSH_VERSION") != "" {
+			// Xonsh doesn't set $SHELL, so default to xonsh
+			ctx.Cli.Exec.Cmd = "xonsh"
+		}
 	}
 
 	sci := NewSelectCliArgs(ctx.Cli.Exec.Arn, ctx.Cli.Exec.AccountId, ctx.Cli.Exec.Role, ctx.Cli.Exec.Profile)
-	if awssso, err := sci.Update(ctx); err == nil {
+	if err := sci.Update(ctx); err == nil {
 		// successful lookup?
-		return execCmd(ctx, awssso, sci.AccountId, sci.RoleName)
+		return execCmd(ctx, sci.AccountId, sci.RoleName)
 	} else if !errors.Is(err, &NoRoleSelectedError{}) {
 		// invalid arguments, not missing
 		return err
-	}
-
-	if ctx.Cli.Exec.NoCache {
-		c := &CacheCmd{}
-		if err = c.Run(ctx); err != nil {
-			return err
-		}
 	}
 
 	return ctx.PromptExec(execCmd)
 }
 
 // Executes Cmd+Args in the context of the AWS Role creds
-func execCmd(ctx *RunContext, awssso *sso.AWSSSO, accountid int64, role string) error {
-	region := ctx.Settings.GetDefaultRegion(ctx.Cli.Exec.AccountId, ctx.Cli.Exec.Role, ctx.Cli.Exec.NoRegion)
+func execCmd(ctx *RunContext, accountid int64, role string) error {
+	region := ctx.Settings.GetDefaultRegion(accountid, role, ctx.Cli.Exec.NoRegion)
 
 	ctx.Settings.Cache.AddHistory(utils.MakeRoleARN(accountid, role))
 	if err := ctx.Settings.Cache.Save(false); err != nil {
-		log.WithError(err).Warnf("Unable to update cache")
+		log.Warn("Unable to update cache", "error", err.Error())
 	}
 
 	// ready our command and connect everything up
@@ -91,17 +95,17 @@ func execCmd(ctx *RunContext, awssso *sso.AWSSSO, accountid int64, role string) 
 
 	// add the variables we need for AWS to the executor without polluting our
 	// own process
-	for k, v := range execShellEnvs(ctx, awssso, accountid, role, region) {
-		log.Debugf("Setting %s = %s", k, v)
+	for k, v := range execShellEnvs(ctx, accountid, role, region) {
+		log.Debug("Setting", "variable", k, "value", v)
 		cmd.Env = append(cmd.Env, fmt.Sprintf("%s=%s", k, v))
 	}
 	// just do it!
 	return cmd.Run()
 }
 
-func execShellEnvs(ctx *RunContext, awssso *sso.AWSSSO, accountid int64, role, region string) map[string]string {
+func execShellEnvs(ctx *RunContext, accountid int64, role, region string) map[string]string {
 	var err error
-	credsPtr := GetRoleCredentials(ctx, awssso, accountid, role)
+	credsPtr := GetRoleCredentials(ctx, AwsSSO, ctx.Cli.Exec.STSRefresh, accountid, role)
 	creds := *credsPtr
 
 	ssoName, _ := ctx.Settings.GetSelectedSSOName(ctx.Cli.SSO)
@@ -129,11 +133,11 @@ func execShellEnvs(ctx *RunContext, awssso *sso.AWSSSO, accountid int64, role, r
 	var roleInfo *sso.AWSRoleFlat
 	if roleInfo, err = cache.Roles.GetRole(accountid, role); err != nil {
 		// this error should never happen
-		log.Errorf("Unable to find role in cache.  Unable to set AWS_SSO_PROFILE")
+		log.Error("Unable to find role in cache.  Unable to set AWS_SSO_PROFILE")
 	} else {
 		shellVars["AWS_SSO_PROFILE"], err = roleInfo.ProfileName(ctx.Settings)
 		if err != nil {
-			log.Errorf("Unable to generate AWS_SSO_PROFILE: %s", err.Error())
+			log.Error("Unable to generate AWS_SSO_PROFILE", "error", err.Error())
 		}
 
 		// and any EnvVarTags

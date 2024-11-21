@@ -2,7 +2,7 @@ package main
 
 /*
  * AWS SSO CLI
- * Copyright (c) 2021-2023 Aaron Turner  <synfinatic at gmail dot com>
+ * Copyright (c) 2021-2024 Aaron Turner  <synfinatic at gmail dot com>
  *
  * This program is free software: you can redistribute it
  * and/or modify it under the terms of the GNU General Public License as
@@ -22,22 +22,18 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"strings"
 
 	"github.com/alecthomas/kong"
 	"github.com/posener/complete"
+
 	// "github.com/davecgh/go-spew/spew"
-	"github.com/sirupsen/logrus"
-	"github.com/synfinatic/aws-sso-cli/internal/awscreds"
-	"github.com/synfinatic/aws-sso-cli/internal/ecs"
-	"github.com/synfinatic/aws-sso-cli/internal/ecs/client"
-	"github.com/synfinatic/aws-sso-cli/internal/ecs/server"
-	"github.com/synfinatic/aws-sso-cli/internal/helper"
+
+	"github.com/synfinatic/aws-sso-cli/internal/config"
 	"github.com/synfinatic/aws-sso-cli/internal/predictor"
+	"github.com/synfinatic/aws-sso-cli/internal/sso"
 	"github.com/synfinatic/aws-sso-cli/internal/storage"
-	"github.com/synfinatic/aws-sso-cli/internal/tags"
-	"github.com/synfinatic/aws-sso-cli/internal/url"
 	"github.com/synfinatic/aws-sso-cli/internal/utils"
-	"github.com/synfinatic/aws-sso-cli/sso"
 	"github.com/willabides/kongplete"
 )
 
@@ -51,20 +47,27 @@ var VALID_LOG_LEVELS = []string{"error", "warn", "info", "debug", "trace"}
 
 var AwsSSO *sso.AWSSSO // global
 
+type CommandAuth int
+
+const (
+	AUTH_UNKNOWN   CommandAuth = iota
+	AUTH_NO_CONFIG             // run command without loading config
+	AUTH_SKIP                  // load config, but no need to SSO auth
+	AUTH_REQUIRED              // load config and require SSO auth
+)
+
 type RunContext struct {
 	Kctx     *kong.Context
 	Cli      *CLI
 	Settings *sso.Settings // unified config & cache
 	Store    storage.SecureStorage
+	Auth     CommandAuth
 }
 
 const (
-	CONFIG_DIR          = "~/.aws-sso"
-	CONFIG_FILE         = CONFIG_DIR + "/config.yaml"
-	JSON_STORE_FILE     = CONFIG_DIR + "/store.json"
-	INSECURE_CACHE_FILE = CONFIG_DIR + "/cache.json"
-	DEFAULT_STORE       = "file"
-	COPYRIGHT_YEAR      = "2021-2023"
+	DEFAULT_STORE   = "file"
+	COPYRIGHT_YEAR  = "2021-2024"
+	DEFAULT_THREADS = 5
 )
 
 var DEFAULT_CONFIG map[string]interface{} = map[string]interface{}{
@@ -84,161 +87,203 @@ var DEFAULT_CONFIG map[string]interface{} = map[string]interface{}{
 	"PromptColors.SelectedSuggestionTextColor":  "White",
 	"PromptColors.SuggestionBGColor":            "Cyan",
 	"PromptColors.SuggestionTextColor":          "White",
+	"AutoConfigCheck":                           false,
+	"AutoLogin":                                 false,
+	"CacheRefresh":                              168, // 7 days in hours
+	"ConfigProfilesUrlAction":                   "open",
+	"ConsoleDuration":                           60,
 	"DefaultRegion":                             "us-east-1",
+	"DefaultSSO":                                "Default",
+	"FirefoxOpenUrlInContainer":                 false,
+	"FullTextSearch":                            true,
 	"HistoryLimit":                              10,
 	"HistoryMinutes":                            1440, // 24hrs
 	"ListFields":                                DEFAULT_LIST_FIELDS,
-	"ConsoleDuration":                           60,
 	"UrlAction":                                 "open",
-	"ConfigProfilesUrlAction":                   "open",
-	"LogLevel":                                  "warn",
-	"DefaultSSO":                                "Default",
-	"FirefoxOpenUrlInContainer":                 false,
-	"AutoConfigCheck":                           false,
-	"FullTextSearch":                            true,
-	"ProfileFormat":                             sso.DEFAULT_PROFILE_TEMPLATE,
-	"CacheRefresh":                              168, // 7 days in hours
-	"Threads":                                   5,
+	"LogLevel":                                  "info",
+	"ProfileFormat":                             NICE_PROFILE_FORMAT,
+	"Threads":                                   DEFAULT_THREADS,
 	"MaxBackoff":                                5, // seconds
 	"MaxRetry":                                  10,
 }
 
+type LogLevelType string
+
+func (level LogLevelType) Validate() error {
+	if utils.StrListContains(string(level), VALID_LOG_LEVELS) || level == "" {
+		return nil
+	}
+	return fmt.Errorf("invalid value: %s.  Must be one of: %s", level, strings.Join(VALID_LOG_LEVELS, ", "))
+}
+
 type CLI struct {
 	// Common Arguments
-	Browser       string `kong:"short='b',help='Path to browser to open URLs with',env='AWS_SSO_BROWSER'"`
-	ConfigFile    string `kong:"name='config',default='${CONFIG_FILE}',help='Config file',env='AWS_SSO_CONFIG'"`
-	LogLevel      string `kong:"short='L',name='level',help='Logging level [error|warn|info|debug|trace] (default: warn)'"`
-	Lines         bool   `kong:"help='Print line number in logs'"`
-	UrlAction     string `kong:"short='u',help='How to handle URLs [clip|exec|open|print|printurl|granted-containers|open-url-in-container] (default: open)'"`
-	SSO           string `kong:"short='S',help='Override default AWS SSO Instance',env='AWS_SSO',predictor='sso'"`
-	STSRefresh    bool   `kong:"help='Force refresh of STS Token Credentials'"`
-	NoConfigCheck bool   `kong:"help='Disable automatic ~/.aws/config updates'"`
-	Threads       int    `kong:"help='Override number of threads for talking to AWS'"`
+	Browser    string       `kong:"short='b',help='Path to browser to open URLs with',env='AWS_SSO_BROWSER'"`
+	ConfigFile string       `kong:"name='config',default='${CONFIG_FILE}',help='Config file',env='AWS_SSO_CONFIG',predict='allFiles'"`
+	LogLevel   LogLevelType `kong:"short='L',name='level',help='Logging level [error|warn|info|debug|trace] (default: info)'"`
+	Lines      bool         `kong:"help='Print line number in logs'"`
+	SSO        string       `kong:"short='S',help='Override default AWS SSO Instance',env='AWS_SSO',predictor='sso'"`
 
 	// Commands
-	Cache          CacheCmd          `kong:"cmd,help='Force reload of cached AWS SSO role info and config.yaml'"`
-	Console        ConsoleCmd        `kong:"cmd,help='Open AWS Console using specificed AWS role/profile'"`
-	Default        DefaultCmd        `kong:"cmd,hidden,default='1'"` // list command without args
-	Eval           EvalCmd           `kong:"cmd,help='Print AWS environment vars for use with eval $(aws-sso eval ...)'"`
-	Exec           ExecCmd           `kong:"cmd,help='Execute command using specified IAM role in a new shell'"`
-	Flush          FlushCmd          `kong:"cmd,help='Flush AWS SSO/STS credentials from cache'"`
-	List           ListCmd           `kong:"cmd,help='List all accounts / roles (default command)'"`
-	Logout         LogoutCmd         `kong:"cmd,help='Logout in browser and invalidate all credentials'"`
-	Process        ProcessCmd        `kong:"cmd,help='Generate JSON for credential_process in ~/.aws/config'"`
-	Static         StaticCmd         `kong:"cmd,hidden,help='Manage static AWS API credentials'"`
-	Tags           TagsCmd           `kong:"cmd,help='List tags'"`
-	Time           TimeCmd           `kong:"cmd,help='Print how much time before current STS Token expires'"`
-	Completions    CompleteCmd       `kong:"cmd,help='Manage shell completions'"`
-	ConfigProfiles ConfigProfilesCmd `kong:"cmd,help='Update ~/.aws/config with AWS SSO profiles from the cache'"`
-	Config         ConfigCmd         `kong:"cmd,help='Run the configuration wizard'"`
-	Ecs            EcsCmd            `kong:"cmd,help='ECS Server commands'"`
-	Version        VersionCmd        `kong:"cmd,help='Print version and exit'"`
+	Default      DefaultCmd      `kong:"cmd,hidden,default='1'"` // list command without args
+	Ecs          EcsCmd          `kong:"cmd,help='ECS server/client commands'"`
+	List         ListCmd         `kong:"cmd,help='List all accounts / roles (default command)'"`
+	Login        LoginCmd        `kong:"cmd,help='Login to an AWS Identity Center instance'"`
+	ListSSORoles ListSSORolesCmd `kong:"cmd,hidden,help='List AWS SSO Roles (debugging)'"`
+	Setup        SetupCmd        `kong:"cmd,help='Setup Wizard, Completions, Profiles, etc'"`
+	Tags         TagsCmd         `kong:"cmd,help='List tags'"`
+	Time         TimeCmd         `kong:"cmd,help='Print how much time before current STS Token expires'"`
+	Version      VersionCmd      `kong:"cmd,help='Print version and exit'"`
+
+	// Login Commands
+	Cache       CacheCmd       `kong:"cmd,help='Force reload of cached AWS SSO role info and config.yaml',group='login-required'"`
+	Console     ConsoleCmd     `kong:"cmd,help='Open AWS Console using specificed AWS role/profile',group='login-required'"`
+	Credentials CredentialsCmd `kong:"cmd,help='Generate static AWS credentials for use with AWS CLI',group='login-required'"`
+	Eval        EvalCmd        `kong:"cmd,help='Print AWS environment vars for use with eval $(aws-sso eval ...)',group='login-required'"`
+	Exec        ExecCmd        `kong:"cmd,help='Execute command using specified IAM role in a new shell',group='login-required'"`
+	Logout      LogoutCmd      `kong:"cmd,help='Logout from an AWS Identity Center instance and invalidate all credentials',group='login-required'"`
+	Process     ProcessCmd     `kong:"cmd,help='Generate JSON for AWS SDK credential_process command',group='login-required'"`
 }
 
 func main() {
 	cli := CLI{}
 	var err error
-
-	log = logrus.New()
-	ctx, override := parseArgs(&cli)
-	awscreds.SetLogger(log)
-	helper.SetLogger(log)
-	predictor.SetLogger(log)
-	sso.SetLogger(log)
-	storage.SetLogger(log)
-	tags.SetLogger(log)
-	url.SetLogger(log)
-	utils.SetLogger(log)
-	ecs.SetLogger(log)
-	server.SetLogger(log)
-	client.SetLogger(log)
-
-	if err := logLevelValidate(cli.LogLevel); err != nil {
-		log.Fatalf("%s", err.Error())
-	}
-
 	runCtx := RunContext{
-		Kctx: ctx,
 		Cli:  &cli,
+		Auth: AUTH_UNKNOWN,
 	}
 
-	switch ctx.Command() {
-	case "version":
-		if err = ctx.Run(&runCtx); err != nil {
-			log.Fatalf("Error running command: %s", err.Error())
+	override := parseArgs(&runCtx)
+
+	if runCtx.Auth == AUTH_NO_CONFIG {
+		// side-step the rest of the setup...
+		if err = runCtx.Kctx.Run(&runCtx); err != nil {
+			log.Fatal(err.Error())
 		}
-		return
 	}
 
 	// Load the config file
-	cli.ConfigFile = utils.GetHomePath(cli.ConfigFile)
+	runCtx.Cli.ConfigFile = utils.GetHomePath(runCtx.Cli.ConfigFile)
 
 	if _, err := os.Stat(cli.ConfigFile); errors.Is(err, os.ErrNotExist) {
-		log.Warnf("No config file found!  Will now prompt you for a basic config...")
-		if err = setupWizard(&runCtx, false, false, runCtx.Cli.Config.Advanced); err != nil {
-			log.Fatalf("%s", err.Error())
+		log.Warn("No config file found!  Will now prompt you for a basic config...")
+		if err = setupWizard(&runCtx, false, false, runCtx.Cli.Setup.Wizard.Advanced); err != nil {
+			log.Fatal(err.Error())
 		}
-		if ctx.Command() == "config" {
-			// we're done.
+		if runCtx.Kctx.Command() == "setup wizard" {
+			// don't run the wizard again, we're done.
 			return
 		}
 	} else if err != nil {
-		log.WithError(err).Fatalf("Unable to open config file: %s", cli.ConfigFile)
+		log.Fatal("Unable to open config file", "file", cli.ConfigFile, "error", err.Error())
 	}
 
-	cacheFile := utils.GetHomePath(INSECURE_CACHE_FILE)
+	cacheFile := config.InsecureCacheFile(true)
 
-	if runCtx.Settings, err = sso.LoadSettings(cli.ConfigFile, cacheFile, DEFAULT_CONFIG, override); err != nil {
-		log.Fatalf("%s", err.Error())
+	if runCtx.Settings, err = sso.LoadSettings(runCtx.Cli.ConfigFile, cacheFile, DEFAULT_CONFIG, override); err != nil {
+		log.Fatal(err.Error())
 	}
 
-	// Load the secure store data
-	switch runCtx.Settings.SecureStore {
-	case "json":
-		sfile := utils.GetHomePath(JSON_STORE_FILE)
-		if runCtx.Settings.JsonStore != "" {
-			sfile = utils.GetHomePath(runCtx.Settings.JsonStore)
+	switch runCtx.Auth {
+	case AUTH_REQUIRED:
+		// make sure we have authenticated via AWS SSO and init SecureStore
+		loadSecureStore(&runCtx)
+		if !checkAuth(&runCtx) {
+			if !runCtx.Settings.AutoLogin {
+				log.Fatal(fmt.Sprintf("Must run `aws-sso login` before running `aws-sso %s`", runCtx.Kctx.Command()))
+			}
+			// perform our login automatically
+			doAuth(&runCtx)
 		}
-		runCtx.Store, err = storage.OpenJsonStore(sfile)
+
+	case AUTH_SKIP:
+		// commands which don't need to be authenticated to SSO
+		c := &runCtx
+		s, err := c.Settings.GetSelectedSSO(c.Cli.SSO)
 		if err != nil {
-			log.WithError(err).Fatalf("Unable to open JsonStore %s", sfile)
+			log.Fatal(err.Error())
 		}
-		log.Warnf("Using insecure json file for SecureStore: %s", sfile)
-	default:
-		cfg, err := storage.NewKeyringConfig(runCtx.Settings.SecureStore, CONFIG_DIR)
-		if err != nil {
-			log.WithError(err).Fatalf("Unable to create SecureStore")
-		}
-		runCtx.Store, err = storage.OpenKeyring(cfg)
-		if err != nil {
-			log.WithError(err).Fatalf("Unable to open SecureStore %s", runCtx.Settings.SecureStore)
-		}
+
+		loadSecureStore(c)
+		AwsSSO = sso.NewAWSSSO(s, &c.Store)
+	case AUTH_UNKNOWN:
+		log.Fatal("Internal error: AUTH_UNKNOWN, please open a bug report")
 	}
 
-	err = ctx.Run(&runCtx)
+	err = runCtx.Kctx.Run(&runCtx)
 	if err != nil {
-		log.Fatalf("Error running command: %s", err.Error())
+		log.Fatal(err.Error())
+	}
+}
+
+// loadSecureStore loads our secure store data for future access
+func loadSecureStore(ctx *RunContext) {
+	var err error
+	switch ctx.Settings.SecureStore {
+	case "json":
+		sfile := config.JsonStoreFile(true)
+		if ctx.Settings.JsonStore != "" {
+			sfile = utils.GetHomePath(ctx.Settings.JsonStore)
+		}
+		ctx.Store, err = storage.OpenJsonStore(sfile)
+		if err != nil {
+			log.Fatal("Unable to open JsonStore", "file", sfile, "error", err.Error())
+		}
+		log.Warn("Using insecure json file for SecureStore", "file", sfile)
+	default:
+		cfg, err := storage.NewKeyringConfig(ctx.Settings.SecureStore, config.ConfigDir(true))
+		if err != nil {
+			log.Fatal("Unable to create SecureStore", "error", err.Error())
+		}
+		ctx.Store, err = storage.OpenKeyring(cfg)
+		if err != nil {
+			log.Fatal("Unable to open SecureStore", "file", ctx.Settings.SecureStore, "error", err.Error())
+		}
 	}
 }
 
 // parseArgs parses our CLI arguments
-func parseArgs(cli *CLI) (*kong.Context, sso.OverrideSettings) {
+func parseArgs(ctx *RunContext) sso.OverrideSettings {
+	var err error
+
 	// need to pass in the variables for defaults
 	vars := kong.Vars{
-		"CONFIG_DIR":      CONFIG_DIR,
-		"CONFIG_FILE":     CONFIG_FILE,
+		"CONFIG_DIR":      config.ConfigDir(false),
+		"CONFIG_FILE":     config.ConfigFile(false),
 		"DEFAULT_STORE":   DEFAULT_STORE,
-		"JSON_STORE_FILE": JSON_STORE_FILE,
+		"DEFAULT_THREADS": fmt.Sprintf("%d", DEFAULT_THREADS),
+		"JSON_STORE_FILE": config.JsonStoreFile(false),
+		"VERSION":         Version,
 	}
+
+	help := kong.HelpOptions{
+		NoExpandSubcommands: true,
+	}
+
+	groups := []kong.Group{
+		{
+			Title: "Commands requiring login:",
+			Key:   "login-required",
+		},
+		{
+			Title: "Add SSL Certificate/Key:",
+			Key:   "add-ssl",
+		},
+	}
+
+	cli := ctx.Cli
 
 	parser := kong.Must(
 		cli,
 		kong.Name("aws-sso"),
 		kong.Description("Securely manage temporary AWS API Credentials issued via AWS SSO"),
+		kong.ConfigureHelp(help),
 		vars,
+		kong.ExplicitGroups(groups),
+		kong.Bind(ctx),
 	)
 
-	p := predictor.NewPredictor(utils.GetHomePath(INSECURE_CACHE_FILE), utils.GetHomePath(CONFIG_FILE))
+	p := predictor.NewPredictor(config.InsecureCacheFile(true), config.ConfigFile(true))
 
 	kongplete.Complete(parser,
 		kongplete.WithPredictors(
@@ -250,39 +295,35 @@ func parseArgs(cli *CLI) (*kong.Context, sso.OverrideSettings) {
 				"region":    p.RegionComplete(),
 				"role":      p.RoleComplete(),
 				"sso":       p.SsoComplete(),
+				"allFiles":  complete.PredictFiles("*"),
 			},
 		),
 	)
 
-	ctx, err := parser.Parse(os.Args[1:])
+	ctx.Kctx, err = parser.Parse(os.Args[1:])
 	parser.FatalIfErrorf(err)
 
-	action, err := url.NewAction(cli.UrlAction)
-	if err != nil {
-		log.Fatalf("Invalid --url-action %s", cli.UrlAction)
+	threads := 0
+	if cli.Cache.Threads != DEFAULT_THREADS {
+		threads = cli.Cache.Threads
+	} else if cli.Login.Threads != DEFAULT_THREADS {
+		threads = cli.Login.Threads
 	}
 
 	override := sso.OverrideSettings{
 		Browser:    cli.Browser,
 		DefaultSSO: cli.SSO,
-		LogLevel:   cli.LogLevel,
+		LogLevel:   string(cli.LogLevel),
 		LogLines:   cli.Lines,
-		Threads:    cli.Threads,
-		UrlAction:  action,
+		Threads:    threads, // must be > 0 to override config
 	}
 
-	log.SetFormatter(&logrus.TextFormatter{
-		DisableLevelTruncation: true,
-		PadLevelText:           true,
-		DisableTimestamp:       true,
-	})
-
-	return ctx, override
+	return override
 }
 
 type VersionCmd struct{} // takes no arguments
 
-func (cc *VersionCmd) Run(ctx *RunContext) error {
+func (v VersionCmd) BeforeReset(ctx *RunContext) error {
 	delta := ""
 	if len(Delta) > 0 {
 		delta = fmt.Sprintf(" [%s delta]", Delta)
@@ -290,57 +331,55 @@ func (cc *VersionCmd) Run(ctx *RunContext) error {
 	}
 	fmt.Printf("AWS SSO CLI Version %s -- Copyright %s Aaron Turner\n", Version, COPYRIGHT_YEAR)
 	fmt.Printf("%s (%s)%s built at %s\n", CommitID, Tag, delta, Buildinfos)
+	os.Exit(0)
+	return nil
+}
+
+func (cc *VersionCmd) Run(ctx *RunContext) error {
 	return nil
 }
 
 // Get our RoleCredentials from the secure store or from AWS SSO
-func GetRoleCredentials(ctx *RunContext, awssso *sso.AWSSSO, accountid int64, role string) *storage.RoleCredentials {
+func GetRoleCredentials(ctx *RunContext, awssso *sso.AWSSSO, refreshSTS bool, accountid int64, role string) *storage.RoleCredentials {
 	creds := storage.RoleCredentials{}
 
 	// First look for our creds in the secure store, if we're not forcing a refresh
 	arn := utils.MakeRoleARN(accountid, role)
-	log.Debugf("Getting role credentials for %s", arn)
-	if !ctx.Cli.STSRefresh {
+	log.Debug("Getting role credentials", "arn", arn)
+	if !refreshSTS {
 		if roleFlat, err := ctx.Settings.Cache.GetRole(arn); err == nil {
 			if !roleFlat.IsExpired() {
 				if err := ctx.Store.GetRoleCredentials(arn, &creds); err == nil {
 					if !creds.Expired() {
-						log.Debugf("Retrieved role credentials from the SecureStore")
+						log.Debug("Retrieved role credentials from the SecureStore")
 						return &creds
 					}
 				}
 			}
 		}
 	} else {
-		log.Infof("Forcing STS refresh for %s", arn)
+		log.Info("Forcing STS refresh", "arn", arn)
 	}
 
-	log.Debugf("Fetching STS token from AWS SSO")
+	log.Debug("Fetching STS token from AWS SSO")
 
 	// If we didn't use our secure store ask AWS SSO
 	var err error
 	creds, err = awssso.GetRoleCredentials(accountid, role)
 	if err != nil {
-		log.WithError(err).Fatalf("Unable to get role credentials for %s", arn)
+		log.Fatal("Unable to get role credentials", "arn", arn, "error", err.Error())
 	}
 
-	log.Debugf("Retrieved role credentials from AWS SSO")
+	log.Debug("Retrieved role credentials from AWS SSO")
 
 	// Cache our creds
 	if err := ctx.Store.SaveRoleCredentials(arn, creds); err != nil {
-		log.WithError(err).Warnf("Unable to cache role credentials in secure store")
+		log.Warn("Unable to cache role credentials in secure store", "error", err.Error())
 	}
 
 	// Update the cache
 	if err := ctx.Settings.Cache.SetRoleExpires(arn, creds.ExpireEpoch()); err != nil {
-		log.WithError(err).Warnf("Unable to update cache")
+		log.Warn("Unable to update cache", "error", err.Error())
 	}
 	return &creds
-}
-
-func logLevelValidate(level string) error {
-	if utils.StrListContains(level, VALID_LOG_LEVELS) || level == "" {
-		return nil
-	}
-	return fmt.Errorf("Invalid value for --level: %s", level)
 }

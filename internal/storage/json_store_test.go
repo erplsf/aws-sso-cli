@@ -2,7 +2,7 @@ package storage
 
 /*
  * AWS SSO CLI
- * Copyright (c) 2021-2023 Aaron Turner  <synfinatic at gmail dot com>
+ * Copyright (c) 2021-2024 Aaron Turner  <synfinatic at gmail dot com>
  *
  * This program is free software: you can redistribute it
  * and/or modify it under the terms of the GNU General Public License as
@@ -205,4 +205,73 @@ func (s *JsonStoreTestSuite) TestStaticCredentials() {
 	assert.NoError(t, s.json.SaveStaticCredentials(arn, cr2))
 	assert.NoError(t, s.json.GetStaticCredentials("arn:aws:iam::123456789012:user/foobar", &cr))
 	assert.Equal(t, cr2, cr)
+}
+
+func (s *JsonStoreTestSuite) TestEcsBearerToken() {
+	t := s.T()
+
+	token, err := s.json.GetEcsBearerToken()
+	assert.NoError(t, err)
+	assert.Empty(t, token)
+
+	err = s.json.SaveEcsBearerToken("not a real token")
+	assert.NoError(t, err)
+
+	token, err = s.json.GetEcsBearerToken()
+	assert.NoError(t, err)
+	assert.Equal(t, "not a real token", token)
+
+	err = s.json.DeleteEcsBearerToken()
+	assert.NoError(t, err)
+
+	token, err = s.json.GetEcsBearerToken()
+	assert.NoError(t, err)
+	assert.Empty(t, token)
+}
+
+func (s *JsonStoreTestSuite) TestEcsSslKeyPair() { // nolint: dupl
+	t := s.T()
+
+	cert, err := s.json.GetEcsSslCert()
+	assert.NoError(t, err)
+	assert.Empty(t, cert)
+
+	key, err := s.json.GetEcsSslKey()
+	assert.NoError(t, err)
+	assert.Empty(t, key)
+
+	certBytes, err := os.ReadFile("../ecs/server/testdata/localhost.crt")
+	assert.NoError(t, err)
+	keyBytes, err := os.ReadFile("../ecs/server/testdata/localhost.key")
+	assert.NoError(t, err)
+
+	err = s.json.SaveEcsSslKeyPair([]byte{}, certBytes)
+	assert.NoError(t, err)
+
+	err = s.json.SaveEcsSslKeyPair(keyBytes, certBytes)
+	assert.NoError(t, err)
+
+	err = s.json.SaveEcsSslKeyPair(keyBytes, keyBytes)
+	assert.Error(t, err)
+	err = s.json.SaveEcsSslKeyPair(certBytes, certBytes)
+	assert.Error(t, err)
+
+	cert, err = s.json.GetEcsSslCert()
+	assert.NoError(t, err)
+	assert.Equal(t, string(certBytes), cert)
+
+	key, err = s.json.GetEcsSslKey()
+	assert.NoError(t, err)
+	assert.Equal(t, string(keyBytes), key)
+
+	err = s.json.DeleteEcsSslKeyPair()
+	assert.NoError(t, err)
+
+	cert, err = s.json.GetEcsSslCert()
+	assert.NoError(t, err)
+	assert.Empty(t, cert)
+
+	key, err = s.json.GetEcsSslKey()
+	assert.NoError(t, err)
+	assert.Empty(t, key)
 }

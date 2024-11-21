@@ -1,8 +1,17 @@
 # Configuration
 
-By default, `aws-sso` stores it's configuration file in `~/.aws-sso/config.yaml`,
-but this can be overridden by setting `$AWS_SSO_CONFIG` in your shell or via the
-`--config` flag.
+By default, `aws-sso` will by default store all it's configuration and state files in
+`~/.config/aws-sso` for versions `>= 1.17.0` per the [XDG spec](
+https://specifications.freedesktop.org/basedir-spec/basedir-spec-latest.html).  
+Previous versions of `aws-sso` used `~/.aws-sso`.  Users at their own descresion may move the
+files to the new location.  To keep files co-located in the same place, if the directory
+`~/.aws-sso` exists, then it will be used.
+
+**Note:** The `aws-sso` documentation will generally use the older file path (`~/.aws-sso/...`)
+when describing file locations.
+
+The main configuration file is named `~/.aws-sso/config.yaml`, but this can be overridden by
+setting `$AWS_SSO_CONFIG` in your shell or via the `--config` flag.
 
 The first time you run `aws-sso` and it detects there is no configuration file,
 it will prompt you for a number of questions to give you a basic configuration.
@@ -37,14 +46,14 @@ SSOConfig:
 DefaultRegion: <AWS_DEFAULT_REGION>
 DefaultSSO: <name of AWS SSO>
 CacheRefresh: <hours>
-AutoConfigCheck: [False|True]
+AutoConfigCheck: [false|true]
+AutoLogin: [false|true]
 Threads: <integer>
 MaxRetry: <integer>
 MaxBackoff: <integer>
 
 Browser: <path to web browser>
 UrlAction: [clip|exec|print|printurl|open|granted-containers|open-url-in-container]
-ConfigProfilesUrlAction: [clip|exec|open|granted-containers|open-url-in-container]
 ConfigProfilesBinaryPath: <path to aws-sso binary>
 UrlExecCommand:
     - <command>
@@ -130,12 +139,6 @@ selected (most specific to most generic):
  1. At the AWS SSO Instance level: `SSOConfig -> <AWS SSO Instance>`
  1. At the config file level (default is `us-east-1`)
 
-### AuthUrlAction
-
-Override the global [UrlAction](#urlaction) when authenticating with your SSO provider
-to retrieve an AWS SSO token.  Generally only useful when you wish to use your default
-browser with one `SSOConfig` block to re-use your existing SSO browser authentication cookie.
-
 ### Accounts
 
 The `Accounts` block is completely optional!  The only purpose of this block
@@ -155,28 +158,28 @@ the account level will be applied to all roles in that account.
 
 Some special tags:
 
- * **Color** -- Used to specify the color of the [Firefox container](#browser--urlaction--urlexeccommand) label.  Valid values are:
-	* blue
-	* turquoise
-	* green
-	* yellow
-	* orange
-	* red
-	* pink
-	* purple
- * **Icon** -- Used to specify the icon of the [Firefox container](#browser--urlaction--urlexeccommand) label.  Valid values are:
-	* fingerprint
-	* briefcase
-	* dollar
-	* cart
-	* gift
-	* vacation
-	* food
-	* fruit
-	* pet
-	* tree
-	* chill
-	* circle
+ * **Color** -- Used to specify the color of the [Firefox container](#authurlaction--browser--urlaction--urlexeccommand) label.  Valid values are:
+   * blue
+   * turquoise
+   * green
+   * yellow
+   * orange
+   * red
+   * pink
+   * purple
+ * **Icon** -- Used to specify the icon of the [Firefox container](#authurlaction--browser--urlaction--urlexeccommand) label.  Valid values are:
+   * fingerprint
+   * briefcase
+   * dollar
+   * cart
+   * gift
+   * vacation
+   * food
+   * fruit
+   * pet
+   * tree
+   * chill
+   * circle
 
 #### Roles
 
@@ -249,24 +252,21 @@ Value must be > 0.
 
 ### Browser Integration
 
-#### Browser / UrlAction / UrlExecCommand
+#### AuthUrlAction / Browser / UrlAction / UrlExecCommand
 
 `UrlAction` gives you control over how AWS SSO and AWS Console URLs are opened
 in a browser:
 
  * `clip` -- Copies the URL to your clipboard
  * `exec` -- Execute the command provided in `UrlExecCommand`
- * `granted-containers`  -- Generates a URL for the Firefox [Granted Containers](
-	https://addons.mozilla.org/en-US/firefox/addon/granted/) plugin and
-	runs your `UrlExecCommand`
+ * `granted-containers`  -- Generates a URL for the Firefox
+    [Granted Containers](https://addons.mozilla.org/en-US/firefox/addon/granted/) plugin and
+    runs your `UrlExecCommand`
  * `open` -- Opens the URL in your default browser or the browser you specified
     via `--browser` or `Browser`
  * `open-url-in-container` -- Generates a URL for the Firefox [Open Url in Container](
-    https://addons.mozilla.org/en-US/firefox/addon/open-url-in-container/) and
-    [Firefox Multi-Account Containers](
-    https://addons.mozilla.org/en-US/firefox/addon/multi-account-containers/)
-    plugins and runs your `UrlExecCommand`.  Please be sure to install only
-    one of these plugins. ;)
+    https://addons.mozilla.org/en-US/firefox/addon/open-url-in-container/)
+    plugin and runs your `UrlExecCommand`.
  * `print` -- Prints the URL with a message in your terminal to stderr
  * `printurl` -- Prints only the URL in your terminal to stderr
 
@@ -280,6 +280,9 @@ specified as a list, with the URL to open specified as the format string `%s`.
 Only one instance of `%s` is allowed.  Note that YAML requires quotes around
 strings which start with a [reserved indicator](
 https://yaml.org/spec/1.2-old/spec.html#id2774228) like `%`.
+
+`AuthUrlAction` allows you to override the global `UrlAction` when authenticating
+with your SSO provider to retrieve an AWS SSO token.
 
 Examples:
 
@@ -303,6 +306,11 @@ UrlExecCommand:
 
 ##### Open URL in Firefox Container
 
+Opens each IAM Role (and SSO Login page) in a unique Firefox Container using the
+[Open Url in Container](
+https://addons.mozilla.org/en-US/firefox/addon/open-url-in-container/)
+Firefox plugin.
+
 ```yaml
 UrlAction: open-url-in-container
 UrlExecCommand:
@@ -310,7 +318,24 @@ UrlExecCommand:
     - "%s"
 ```
 
-###### Use custom shell script
+**Note:** If you do not want your SSO Login page to be opened in a container,
+use the [AuthUrlAction](#authurlaction--browser--urlaction--urlexeccommand)
+option to specify a different action:
+
+```yaml
+SSOConfig:
+    Default:
+        SSORegion: us-east-1
+        StartUrl: https://example.awsapps.com/start
+        AuthUrlAction: open
+UrlAction: open-url-in-container
+UrlExecCommand:
+    - /Applications/Firefox.app/Contents/MacOS/firefox
+    - "%s"
+```
+
+##### Use custom shell script
+
 ```yaml
 UrlAction: exec
 UrlExecCommand:
@@ -342,27 +367,6 @@ real limit is 12 hours (720 minutes) because AWS SSO sessions [are limited to
 https://docs.aws.amazon.com/singlesignon/latest/userguide/howtosessionduration.html).
 
 ### AWS_PROFILE Integration
-
-#### ConfigProfilesUrlAction
-
-This works just like `UrlAction` above, but is used for setting the default
-`--url-action` in your `~/.aws/config` when generating named AWS profiles for
-use with `$AWS_PROFILE` and the default value for the [config-profiles](
-commands.md#config-profiles) command.
-
-Due to limitations with the AWS SDK, only the following options are valid:
-
- * `clip`
- * `exec`
- * `open`
- * `granted-containers`
- * `open-url-in-container`
-
-**Note:** This option is required if you also want to use 
-[AutoConfigCheck](#autoconfigcheck).
-
-**Note:** This config option was previously known as `ConfigUrlAction` which
-has been deprecated.
 
 #### ConfigProfilesBinaryPath
 
@@ -535,12 +539,9 @@ Specify which fields to display via the `list` command.  Valid options are:
 
 #### AutoConfigCheck
 
-When set to `True`, when your AWS SSO roles are automatically refreshed (see
+When set to `true`, when your AWS SSO roles are automatically refreshed (see
 [CacheRefresh](#cacherefresh)) `aws-sso` will also check to see if any changes
 are warranted in your `~/.aws/config`.
-
-**Note:** This option requires you to also set 
-[ConfigProfilesUrlAction](#configprofilesurlaction).
 
 **Note:** This option can be disabled temporarily on the command line by passing
 the `--no-config-check` flag.
@@ -549,9 +550,24 @@ the `--no-config-check` flag.
 you must be sure to set the `AWS_CONFIG_FILE` environment variable to the correct
 path or disable this configuration option.
 
+#### AutoLogin
+
+When set to `true`, `aws-sso` will behave mostly like v1.x and automatically attempt to
+login with your SSO provider to AWS Identity Center when your session has expired.
+When set to `false` (the default) you must first run [aws-sso login](commands.md#login).
+
+**Note:** This feature exists soley beacuse people don't like change.  Enabling this
+really isn't ideal from a security standpoint since it makes it more likely that
+an attempted phish attack will be successful.  Users should expect the login page to load
+in their browser if and only if they have manually initiated the login process.
+
+**Note:** that v2.x does not support the common [--no-config-check](
+https://synfinatic.github.io/aws-sso-cli/v1.17.0/commands/#common-flags) flag that was
+present in 1.x.
+
 #### LogLevel / LogLines
 
-By default, the `LogLevel` is 'warn'.  You can override it here or via
+By default, the `LogLevel` is 'info'.  You can override it here or via
 `--log-level` with one of the following values:
 
  * `error`
@@ -569,7 +585,7 @@ advanced debugging.
 
  * `file` - Encrypted local files (OS agnostic and default on Linux)
  * `keychain` - macOS [Keychain](https://support.apple.com/guide/mac-help/use-keychains-to-store-passwords-mchlf375f392/mac) (default on macOS)
- * `kwallet` - [KDE Wallet](https://utils.kde.org/projects/kwalletmanager/)
+ * `kwallet` - [KDE Wallet](https://github.com/KDE/kwalletmanager)
  * `pass` - [pass](https://www.passwordstore.org) (uses GPG on backend)
  * `secret-service` - Freedesktop.org [Secret Service](https://specifications.freedesktop.org/secret-service/latest/re01.html)
  * `wincred` - Windows [Credential Manager](https://support.microsoft.com/en-us/windows/accessing-credential-manager-1b5c916a-6a16-889f-8581-fc16e8165ac0) (default on Windows)
@@ -586,4 +602,3 @@ controlled by `aws-sso` so any existing value will be overwritten.
 
 **Note:** This feature is not compatible when using roles using the
 `$AWS_PROFILE` via the `config` command.
-

@@ -2,7 +2,7 @@ package server
 
 /*
  * AWS SSO CLI
- * Copyright (c) 2021-2023 Aaron Turner  <synfinatic at gmail dot com>
+ * Copyright (c) 2021-2024 Aaron Turner  <synfinatic at gmail dot com>
  *
  * This program is free software: you can redistribute it
  * and/or modify it under the terms of the GNU General Public License as
@@ -39,7 +39,7 @@ func (p SlottedHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	case http.MethodDelete:
 		p.Delete(w, r)
 	default:
-		log.Errorf("Invalid request: %s", r.URL.String())
+		log.Error("Invalid request", "url", r.URL.String())
 		ecs.Invalid(w)
 	}
 }

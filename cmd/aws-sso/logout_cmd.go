@@ -2,7 +2,7 @@ package main
 
 /*
  * AWS SSO CLI
- * Copyright (c) 2021-2023 Aaron Turner  <synfinatic at gmail dot com>
+ * Copyright (c) 2021-2024 Aaron Turner  <synfinatic at gmail dot com>
  *
  * This program is free software: you can redistribute it
  * and/or modify it under the terms of the GNU General Public License as
@@ -18,11 +18,17 @@ package main
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 import (
-	"github.com/synfinatic/aws-sso-cli/sso"
+	"github.com/synfinatic/aws-sso-cli/internal/sso"
 )
 
 // LogoutCmd defines the Kong args for the flush command
 type LogoutCmd struct{}
+
+// AfterApply determines if SSO auth token is required
+func (l LogoutCmd) AfterApply(runCtx *RunContext) error {
+	runCtx.Auth = AUTH_SKIP
+	return nil
+}
 
 // Run executes the flush command
 func (cc *LogoutCmd) Run(ctx *RunContext) error {
@@ -34,15 +40,23 @@ func (cc *LogoutCmd) Run(ctx *RunContext) error {
 	}
 	awssso := sso.NewAWSSSO(s, &ctx.Store)
 
-	// Call logout to invalidate our session
-	if err := awssso.Logout(); err != nil {
-		log.WithError(err).Errorf("Unable to logout of AWS IAM Identity Center")
-	}
-
-	// this is what we do anyways
-	flushSso(ctx, awssso)
 	flushSts(ctx, awssso)
+	return awssso.Logout() // invalidate our AccessToken
+}
 
-	// Everything is gone
-	return nil
+// flushSts flushes our IAM STS Role credentials from the secure store
+func flushSts(ctx *RunContext, awssso *sso.AWSSSO) {
+	cache := ctx.Settings.Cache.GetSSO()
+	for _, role := range cache.Roles.GetAllRoles() {
+		if !role.IsExpired() {
+			if err := ctx.Store.DeleteRoleCredentials(role.Arn); err != nil {
+				log.Error("Unable to delete STS token", "arn", role.Arn)
+			}
+		}
+	}
+	if err := ctx.Settings.Cache.MarkRolesExpired(); err != nil {
+		log.Error("failed to mark roles expired", "error", err.Error())
+	} else {
+		log.Info("Deleted cached AWS STS credentials", "sso", awssso.StoreKey())
+	}
 }

@@ -2,7 +2,7 @@ package main
 
 /*
  * AWS SSO CLI
- * Copyright (c) 2021-2023 Aaron Turner  <synfinatic at gmail dot com>
+ * Copyright (c) 2021-2024 Aaron Turner  <synfinatic at gmail dot com>
  *
  * This program is free software: you can redistribute it
  * and/or modify it under the terms of the GNU General Public License as
@@ -19,17 +19,13 @@ package main
  */
 
 import (
-	"github.com/sirupsen/logrus"
+	"github.com/synfinatic/aws-sso-cli/internal/logger"
+	"github.com/synfinatic/flexlog"
 )
 
-var log *logrus.Logger
+var log flexlog.FlexLogger
 
-/*
-func SetLogger(l *logrus.Logger) {
-	log = l
+// initialize the default logger to log to stderr and log at the warn level
+func init() {
+	log = logger.GetLogger()
 }
-
-func GetLogger() *logrus.Logger {
-	return log
-}
-*/

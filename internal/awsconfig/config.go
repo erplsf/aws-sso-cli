@@ -2,7 +2,7 @@ package awsconfig
 
 /*
  * AWS SSO CLI
- * Copyright (c) 2021-2023 Aaron Turner  <synfinatic at gmail dot com>
+ * Copyright (c) 2021-2024 Aaron Turner  <synfinatic at gmail dot com>
  *
  * This program is free software: you can redistribute it
  * and/or modify it under the terms of the GNU General Public License as
@@ -21,16 +21,15 @@ package awsconfig
 import (
 	"os"
 
-	"github.com/synfinatic/aws-sso-cli/internal/url"
+	"github.com/synfinatic/aws-sso-cli/internal/sso"
 	"github.com/synfinatic/aws-sso-cli/internal/utils"
-	"github.com/synfinatic/aws-sso-cli/sso"
 )
 
 const (
 	AWS_CONFIG_FILE = "~/.aws/config"
 	CONFIG_TEMPLATE = `{{range $sso, $struct := . }}{{ range $arn, $profile := $struct }}
 [profile {{ $profile.Profile }}]
-credential_process = {{ $profile.BinaryPath }} -u {{ $profile.Open }} -S "{{ $profile.Sso }}" process --arn {{ $profile.Arn }}
+credential_process = {{ $profile.BinaryPath }} -S "{{ $profile.Sso }}" process --arn {{ $profile.Arn }}
 {{ if len $profile.DefaultRegion }}region = {{ printf "%s\n" $profile.DefaultRegion }}{{ end -}}
 {{ range $key, $value := $profile.ConfigVariables }}{{ $key }} = {{ $value }}
 {{end}}{{end}}{{end}}`
@@ -49,13 +48,13 @@ func AwsConfigFile(cfile string) string {
 var stdout = os.Stdout
 
 // PrintAwsConfig just prints what our new AWS config file block would look like
-func PrintAwsConfig(s *sso.Settings, action url.Action) error {
-	profiles, err := getProfileMap(s, action)
+func PrintAwsConfig(s *sso.Settings) error {
+	profiles, err := getProfileMap(s)
 	if err != nil {
 		return err
 	}
 
-	f, err := utils.NewFileEdit(CONFIG_TEMPLATE, profiles)
+	f, err := utils.NewFileEdit(CONFIG_TEMPLATE, s.DefaultSSO, profiles)
 	if err != nil {
 		return err
 	}
@@ -65,24 +64,25 @@ func PrintAwsConfig(s *sso.Settings, action url.Action) error {
 
 // UpdateAwsConfig updates our AWS config file, optionally presenting a diff for
 // review or possibly making the change without prompting
-func UpdateAwsConfig(s *sso.Settings, action url.Action, cfile string, diff, force bool) error {
-	profiles, err := getProfileMap(s, action)
+func UpdateAwsConfig(s *sso.Settings, cfile string, diff, force bool) error {
+	profiles, err := getProfileMap(s)
 	if err != nil {
 		return err
 	}
 
-	f, err := utils.NewFileEdit(CONFIG_TEMPLATE, profiles)
+	f, err := utils.NewFileEdit(CONFIG_TEMPLATE, s.DefaultSSO, profiles)
 	if err != nil {
 		return err
 	}
 
 	oldConfig := AwsConfigFile(cfile)
-	return f.UpdateConfig(diff, force, oldConfig)
+	_, _, err = f.UpdateConfig(diff, force, oldConfig)
+	return err
 }
 
 // getProfileMap returns our validated sso.ProfileMap
-func getProfileMap(s *sso.Settings, action url.Action) (*sso.ProfileMap, error) {
-	profiles, err := s.GetAllProfiles(action)
+func getProfileMap(s *sso.Settings) (*sso.ProfileMap, error) {
+	profiles, err := s.GetAllProfiles()
 	if err != nil {
 		return profiles, err
 	}

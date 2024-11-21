@@ -2,7 +2,7 @@ package tags
 
 /*
  * AWS SSO CLI
- * Copyright (c) 2021-2023 Aaron Turner  <synfinatic at gmail dot com>
+ * Copyright (c) 2021-2024 Aaron Turner  <synfinatic at gmail dot com>
  *
  * This program is free software: you can redistribute it
  * and/or modify it under the terms of the GNU General Public License as
@@ -138,7 +138,7 @@ func ReformatHistory(value string) string {
 
 	i, err := strconv.ParseInt(x[1], 10, 64)
 	if err != nil {
-		log.WithError(err).Panicf("Unable to parse: %s", value)
+		log.Fatal("unable to parse epoch", "value", value, "epoch", x[1], "split", x, "error", err)
 	}
 
 	d := time.Since(time.Unix(i, 0)).Truncate(time.Second)

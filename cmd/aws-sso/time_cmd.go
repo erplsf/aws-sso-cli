@@ -2,7 +2,7 @@ package main
 
 /*
  * AWS SSO CLI
- * Copyright (c) 2021-2023 Aaron Turner  <synfinatic at gmail dot com>
+ * Copyright (c) 2021-2024 Aaron Turner  <synfinatic at gmail dot com>
  *
  * This program is free software: you can redistribute it
  * and/or modify it under the terms of the GNU General Public License as
@@ -26,6 +26,12 @@ import (
 )
 
 type TimeCmd struct{}
+
+// AfterApply determines if SSO auth token is required
+func (t TimeCmd) AfterApply(runCtx *RunContext) error {
+	runCtx.Auth = AUTH_SKIP
+	return nil
+}
 
 func (cc *TimeCmd) Run(ctx *RunContext) error {
 	expires, isset := os.LookupEnv("AWS_SSO_SESSION_EXPIRATION")

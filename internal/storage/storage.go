@@ -2,7 +2,7 @@ package storage
 
 /*
  * AWS SSO CLI
- * Copyright (c) 2021-2023 Aaron Turner  <synfinatic at gmail dot com>
+ * Copyright (c) 2021-2024 Aaron Turner  <synfinatic at gmail dot com>
  *
  * This program is free software: you can redistribute it
  * and/or modify it under the terms of the GNU General Public License as
@@ -19,13 +19,23 @@ package storage
  */
 
 import (
+	"crypto/x509"
+	"encoding/pem"
 	"fmt"
 	"reflect"
 	"time"
 
+	"github.com/synfinatic/aws-sso-cli/internal/logger"
 	"github.com/synfinatic/aws-sso-cli/internal/utils"
+	"github.com/synfinatic/flexlog"
 	"github.com/synfinatic/gotable"
 )
+
+var log flexlog.FlexLogger
+
+func init() {
+	log = logger.GetLogger()
+}
 
 // this struct should be cached for long term if possible
 type RegisterClientData struct {
@@ -86,11 +96,6 @@ func (r *RoleCredentials) ExpireEpoch() int64 {
 	return time.UnixMilli(r.Expiration).Unix() // yes, millisec
 }
 
-// ExpireString returns the time the creds expire in the format of "2006-01-02 15:04:05.999999999 -0700 MST"
-func (r *RoleCredentials) ExpireString() string {
-	return time.UnixMilli(r.Expiration).String() // yes, millisec
-}
-
 // Expired returns if these role creds have expired or will expire in the next minute
 func (r *RoleCredentials) Expired() bool {
 	now := time.Now().Add(time.Minute).UnixMilli() // yes, millisec
@@ -98,7 +103,7 @@ func (r *RoleCredentials) Expired() bool {
 }
 
 // Return expire time in ISO8601 / RFC3339 format
-func (r *RoleCredentials) ExpireISO8601() string {
+func (r *RoleCredentials) ExpireString() string {
 	return time.Unix(r.ExpireEpoch(), 0).Format(time.RFC3339)
 }
 
@@ -106,7 +111,7 @@ func (r *RoleCredentials) ExpireISO8601() string {
 func (r *RoleCredentials) AccountIdStr() string {
 	s, err := utils.AccountIdToString(r.AccountId)
 	if err != nil {
-		log.WithError(err).Fatalf("Unable to parse accountId from AWS role credentials")
+		log.Fatal("unable to parse accountId from AWS role credentials", "error", err.Error())
 	}
 	return s
 }
@@ -114,27 +119,27 @@ func (r *RoleCredentials) AccountIdStr() string {
 // Validate ensures we have the necessary fields
 func (r *RoleCredentials) Validate() error {
 	if r.RoleName == "" {
-		return fmt.Errorf("Missing roleName")
+		return fmt.Errorf("%s", "missing roleName")
 	}
 
 	if r.AccessKeyId == "" {
-		return fmt.Errorf("Missing accessKeyId")
+		return fmt.Errorf("%s", "missing accessKeyId")
 	}
 
 	if r.SecretAccessKey == "" {
-		return fmt.Errorf("Missing secretAccessKey")
+		return fmt.Errorf("%s", "missing secretAccessKey")
 	}
 
 	if r.AccountId == 0 {
-		return fmt.Errorf("Missing accountId")
+		return fmt.Errorf("%s", "missing accountId")
 	}
 
 	if r.SessionToken == "" {
-		return fmt.Errorf("Missing sessionToken")
+		return fmt.Errorf("%s", "missing sessionToken")
 	}
 
 	if r.Expiration == 0 {
-		return fmt.Errorf("Missing expiration")
+		return fmt.Errorf("%s", "missing expiration")
 	}
 	return nil
 }
@@ -163,7 +168,31 @@ func (sc *StaticCredentials) UserArn() string {
 func (sc *StaticCredentials) AccountIdStr() string {
 	s, err := utils.AccountIdToString(sc.AccountId)
 	if err != nil {
-		log.WithError(err).Panicf("Invalid AccountId from AWS static credentials: %d", sc.AccountId)
+		log.Fatal("Invalid AccountId from AWS static credentials", "accountId", sc.AccountId)
 	}
 	return s
+}
+
+// ValidateSSLCertificate ensures we have a valid SSL certificate
+func ValidateSSLCertificate(certChain []byte) error {
+	block, _ := pem.Decode(certChain)
+
+	if _, err := x509.ParseCertificate(block.Bytes); err != nil {
+		return fmt.Errorf("certificate chain file is not a valid certificate: %w", err)
+	}
+	return nil
+}
+
+// ValidateSSLPrivateKey ensures we have a valid SSL private key
+func ValidateSSLPrivateKey(privateKey []byte) error {
+	// if we have no private key, then we're good
+	if len(privateKey) == 0 {
+		return nil
+	}
+	block, _ := pem.Decode(privateKey)
+
+	if _, err := x509.ParsePKCS8PrivateKey(block.Bytes); err != nil {
+		return fmt.Errorf("private key file is not a valid private key: %s", err)
+	}
+	return nil
 }

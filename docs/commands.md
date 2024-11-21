@@ -1,4 +1,4 @@
-# aws-sso commands
+# aws-sso Commands
 
 ## Common Flags
 
@@ -7,12 +7,25 @@
  * `--config <file>` -- Specify alternative config file (`$AWS_SSO_CONFIG`)
  * `--level <level>`, `-L` -- Change default log level: [error|warn|info|debug|trace]
  * `--lines` -- Print file number with logs
- * `--url-action`, `-u` -- How to handle URLs for your SSO provider
  * `--sso <name>`, `-S` -- Specify non-default AWS SSO instance to use (`$AWS_SSO`)
- * `--sts-refresh` -- Force refresh of STS Token Credentials
- * `--no-config-check` -- Disable automatic updating of `~/.aws/config`
 
 ## Commands
+
+### cache
+
+AWS SSO CLI caches information about your AWS Accounts, Roles and Tags for
+better perfomance.  By default it will refresh this information after 24
+hours, but you can force this data to be refreshed immediately.
+
+Cache data is also automatically updated anytime the `config.yaml` file is
+modified.
+
+Flags:
+
+ * `--no-config-check` -- Disable automatic updating of `~/.aws/config`
+ * `--threads <int>` -- Number of threads to use with AWS (default: 5)
+
+---
 
 ### console
 
@@ -21,18 +34,20 @@ web browser.  The URL can be sent directly to the browser (default), printed
 in the terminal or copied into the Copy & Paste buffer of your computer.
 
 **Note:** Normally, you can only have a single active AWS Console session at
-a time, but multiple session are supported via the [FirefoxOpenUrlInContainer](
-config.md#browser--urlaction--urlexeccommand) configuration option.
+a time, but multiple session are supported via the [open-url-in-container](
+config.md#open-url-in-firefox-container) configuration option.
 
 Flags:
 
+ * `--duration <minutes>`, `-d` -- AWS Session duration in minutes (default 60)
+ * `--prompt`, `-P` -- Force interactive prompt to select role
  * `--region <region>`, `-r` -- Specify the `$AWS_DEFAULT_REGION` to use
  * `--arn <arn>`, `-a` -- ARN of role to assume (`$AWS_SSO_ROLE_ARN`)
  * `--account <account>`, `-A` -- AWS AccountID of role to assume (`$AWS_SSO_ACCOUNT_ID`)
- * `--duration <minutes>`, `-d` -- AWS Session duration in minutes (default 60)
- * `--prompt`, `-P` -- Force interactive prompt to select role
  * `--role <role>`, `-R` -- Name of AWS Role to assume (requires `--account`) (`$AWS_SSO_ROLE_NAME`)
  * `--profile <profile>`, `-p` -- Name of AWS Profile to assume
+ * `--url-action`, `-u` -- How to handle URLs for your SSO provider
+ * `--sts-refresh` -- Force refresh of STS Token Credentials
 
 The generated URL is good for 15 minutes after it is created.
 
@@ -51,62 +66,32 @@ Priority is given to:
 
 ---
 
-### ecs 
+### credentials
 
-For information about the ECS Server functionality, see the [ecs-server](ecs-server.md) page.
+Generate static credentials in the format for [~/.aws/credentials](https://docs.aws.amazon.com/cli/v1/userguide/cli-configure-files.html#cli-configure-files-format).
 
----
-
-### config-profiles
-
-Modifies the `~/.aws/config` file to contain a [named profile](
-https://docs.aws.amazon.com/cli/latest/userguide/cli-configure-files.html#cli-configure-files-using-profiles)
-for every role accessible via AWS SSO CLI.
+This command will expose your temporary AWS IAM credentials in clear text which can be a security issue,
+and is not recommended except for cases where going through the AWS Identity Center web-based authentication
+workflow is not possible.  The most common example of this would be integrating with Docker and needing
+multiple IAM Roles.  Most use cases are better served by using the [setup-profiles](#setup-profiles) command or
+passing in IAM credentials via [environment variables](https://docs.aws.amazon.com/cli/v1/userguide/cli-configure-envvars.html).
 
 Flags:
 
- * `--diff` -- Print a diff of changes to the config file instead of modifying it
- * `--open` -- Specify how to open URls: [clip|exec|open]
- * `--print` -- Print profile entries instead of modifying config file
- * `--force` -- Write a new config file without prompting
- * `--aws-config` -- Override path to `~/.aws/config` file
+ * `--file <path>`, `-f` -- Specify the file to generate.  Default is to print to STDOUT ($AWS_SHARED_CREDENTIALS_FILE).
+ * `--append`, `-a` -- Append to the file instead of overwriting it.
+ * `--profile <profile>,...`, `-p` -- One or more profiles to include in the output.
+ * `--sts-refresh` -- Force refresh of STS Token Credentials
 
-By default, each profile is named according to the [ProfileFormat](
-config.md#profileformat) config option or overridden by the user defined
-[Profile](config.md#profile) option on a role by role basis.
+**Note:** This command honors the same [$AWS_SHARED_CREDENTIALS_FILE](https://docs.aws.amazon.com/cli/v1/userguide/cli-configure-envvars.html)
+that is supported by the AWS SDK to load credentials.  Since these credentials are temporary, it is
+_strongly_ discouraged that users set this to `~/.aws/credentials`, but use a temporary file instead.
 
-For each profile generated, it will specify a [list of settings](
-https://docs.aws.amazon.com/sdkref/latest/guide/settings-global.html) as defined
-by the [ConfigVariables](config.md#configvariables) setting in the
-`~/.aws-sso/config.yaml`.
+---
 
-For more information on this feature, [read the Quickstart Guide](
-quickstart.md#integrating-with-the-aws-profile-variable).
+### ecs
 
-Unlike with other ways to use AWS SSO CLI, the AWS IAM STS credentials will
-_automatically refresh_.  This means, if you do not have a valid AWS SSO token,
-you will be prompted to authentiate via your SSO provider and subsequent
-requests to obtain new IAM STS credentials will automatically happen as needed.
-
-**Note:** Due to a limitation in the AWS tooling, `print` and `printurl` are not
-supported values for `--url-action`.  Hence, you must use `open` or `exec` to
-auto-open URLs in your browser (recommended) or `clip` to automatically copy
-URLs to your clipboard.  _No user prompting is possible._
-
-**Note:** You should run this command any time your list of AWS roles changes
-in order to update the `~/.aws/config` file or enable [AutoConfigCheck](
-config.md#autoconfigcheck) and [ConfigProfilesUrlAction](
-config.md#configprofilesurlaction).
-
-**Note:** If `ConfigProfilesUrlAction` is set, then `--open` is optional,
-otherwise it is required.
-
-**Note:** It is important that you do _NOT_ remove the `# BEGIN_AWS_SSO_CLI` and
-`# END_AWS_SSO_CLI` lines from your config file!  These markers are used to track
-which profiles are managed by AWS SSO CLI.
-
-**Note:** This command does not honor the `--sso` option as it operates on all
-of the configured AWS SSO instances in the `~/.aws-sso/config.yaml` file.
+[ecs commands](ecs-commands.md)
 
 ---
 
@@ -124,12 +109,21 @@ you can write the variable to a file:
 
 `aws-sso eval <args> >~/.devcontainer/devcontainer.env`
 
+Shells supported by `eval`:
+
+ * bash
+ * fish
+ * zonsh
+ * zsh
+ * Windows PowerShell
+
 Flags:
 
  * `--arn <arn>`, `-a` -- ARN of role to assume
  * `--account <account>`, `-A` -- AWS AccountID of role to assume (requires `--role`)
  * `--role <role>`, `-R` -- Name of AWS Role to assume (requires `--account`)
  * `--profile <profile>`, `-p` -- Name of AWS Profile to assume
+ * `--clear`, `-c` -- Generate "unset XXXX" commands to clear the environment
  * `--no-region` -- Do not set the [AWS_DEFAULT_REGION](config.md#DefaultRegion) from config.yaml
  * `--refresh` -- Refresh current IAM credentials
 
@@ -178,6 +172,7 @@ Flags:
  * `--role <role>`, `-R` -- Name of AWS Role to assume (`$AWS_SSO_ROLE_NAME`)
  * `--profile <profile>`, `-p` -- Name of AWS Profile to assume
  * `--no-region` -- Do not set the [AWS_DEFAULT_REGION](config.md#DefaultRegion) from config.yaml
+ * `--sts-refresh` -- Force refresh of STS Token Credentials
 
 Arguments: `[<command>] [<args> ...]`
 
@@ -207,6 +202,7 @@ Flags:
  * `--account <account>`, `-A` -- AWS AccountID of role to assume
  * `--role <role>`, `-R` -- Name of AWS Role to assume (requires `--account`)
  * `--profile <profile>`, `-p` -- Name of AWS Profile to assume
+ * `--sts-refresh` -- Force refresh of STS Token Credentials
 
 Priority is given to:
 
@@ -220,17 +216,6 @@ Priority is given to:
 **Note:** Due to a limitation of the AWS tooling, setting `--url-action print`
 will cause an error because of a limitation of the AWS tooling which prevents
 it from working.
-
----
-
-### cache
-
-AWS SSO CLI caches information about your AWS Accounts, Roles and Tags for
-better perfomance.  By default it will refresh this information after 24
-hours, but you can force this data to be refreshed immediately.
-
-Cache data is also automatically updated anytime the `config.yaml` file is
-modified.
 
 ---
 
@@ -269,34 +254,110 @@ case-sensitive manner.
 
 ---
 
-### logout
+### login
 
-Invalidates all AWS credentials with AWS for the selected SSO instance, 
-including those in your browser session.
+Login via AWS IAM Identity Center (AWS SSO) and retrieve a security token
+used to fetch IAM Role credentials.  As of `aws-sso` v2.x this is required
+_unless_ you enable [AutoLogin](config.md#autologin).
 
-If you only wish to remove the credentials from the `aws-sso` secure store, use
-the [flush](#flush) command.
-
----
-
-### flush
-
-Flush any cached AWS SSO/STS credentials.  By default, it only flushes the
-temporary STS IAM role credentials for the selected SSO instance.
+When you login, `aws-sso` will attempt to refresh your cache of IAM Roles
+per the [CacheRefresh](config.md#cacherefresh) setting.
 
 Flags:
 
- * `--type`, `-t` -- Type of credentials to flush:
-    * `sts` -- Flush temporary STS credentials for IAM roles
-    * `sso` -- Flush temporary AWS SSO credentials
-    * `all` -- Flush temporary STS and SSO credentials
+ * `--no-config-check` -- Disable automatic updating of `~/.aws/config`
+ * `--url-action`, `-u` -- How to handle URLs for your SSO provider
+ * `--sts-refresh` -- Force refresh of STS Token Credentials
+ * `--threads <int>` -- Number of threads to use with AWS (default: 5)
 
-**Note:** Flushing non-expired SSO credentials will not cause new credentials to be issued
-on the next call to the AWS SSO API, but rather the existing credentials will be refreshed
-from the browser session.
+---
 
-**Note:** Flushing credentials does not invalidate them with AWS.  If you wish
-to do that, use the [logout](#logout) command.
+### logout
+
+Invalidates the AWS Identity Center AccessToken (used to fetch new IAM Credentials)
+for the selected SSO instance and removes all IAM Role Credentials cached in the `aws-sso` secure store.
+
+---
+
+### setup completions
+
+Configures your appropriate shell configuration file to add auto-complete
+and [Shell Helpers](#shell-helpers) functionality for commands, flags and
+options. Must restart your shell for this to take effect.
+
+For more information about this feature, please read [the quickstart](
+quickstart.md#enabling-auto-completion-in-your-shell).
+
+Flags:
+
+ * `--source` -- Print out the completions for sourcing into the current shell
+ * `--install` -- Install the new v1.9+ shell completions scripts
+ * `--uninstall` -- Uninstall the new v1.9+ shell completions scripts
+ * `--shell <shell>` -- Override the detected shell
+ * `--shell-script <file>` -- Override the default shell script file to modify
+
+---
+
+### setup ecs
+
+See the [setup ecs](ecs-commands.md#setup-ecs) commands in the ECS Server command documentation.
+
+---
+
+### setup profiles
+
+Modifies the `~/.aws/config` file to contain a [named profile](
+https://docs.aws.amazon.com/cli/latest/userguide/cli-configure-files.html#cli-configure-files-using-profiles)
+for every role accessible via AWS SSO CLI.
+
+Flags:
+
+ * `--diff` -- Print a diff of changes to the config file instead of modifying it
+ * `--print` -- Print profile entries instead of modifying config file
+ * `--force` -- Write a new config file without prompting
+ * `--aws-config` -- Override path to `~/.aws/config` file
+
+By default, each profile is named according to the [ProfileFormat](
+config.md#profileformat) config option or overridden by the user defined
+[Profile](config.md#profile) option on a role by role basis.
+
+For each profile generated, it will specify a [list of settings](
+https://docs.aws.amazon.com/sdkref/latest/guide/settings-global.html) as defined
+by the [ConfigVariables](config.md#configvariables) setting in the
+`~/.aws-sso/config.yaml`.
+
+For more information on this feature, [read the Quickstart Guide](
+quickstart.md#using-the-aws_profile-variable).
+
+Unlike with other ways to use AWS SSO CLI, the AWS IAM STS credentials will
+_automatically refresh_.  This means, if you do not have a valid AWS SSO token,
+you will be prompted to authentiate via your SSO provider and subsequent
+requests to obtain new IAM STS credentials will automatically happen as needed.
+
+**Note:** You should run this command any time your list of AWS roles changes
+in order to update the `~/.aws/config` file or enable [AutoConfigCheck](
+config.md#autoconfigcheck).
+
+**Note:** It is important that you do _NOT_ remove the `# BEGIN_AWS_SSO_CLI` and
+`# END_AWS_SSO_CLI` lines from your config file!  These markers are used to track
+which profiles are managed by AWS SSO CLI.
+
+**Note:** This command does not honor the `--sso` option as it operates on all
+of the configured AWS SSO instances in the `~/.aws-sso/config.yaml` file.
+
+---
+
+### setup wizard
+
+Allows you to run through the configuration wizard and update your AWS SSO CLI
+config file (`~/.aws-sso/config.yaml`).   By default, it only does a very basic
+configuration to get started with.  The `--advanced` flag prompts for more
+settings and is useful for taking advantage of some of the new settings if
+you've upgraded from a previous version!
+
+Flags:
+
+ * `--advanced` -- Prompts for many more config options
 
 ---
 
@@ -329,42 +390,6 @@ AWS Role's STS credentials are valid for in the format of `HHhMMm`
 **Note:** This command is only useful when you have STS credentials configured
 in your shell via [eval](#eval) or [exec](#exec).
 
----
-
-### completions
-
-Configures your appropriate shell configuration file to add auto-complete
-and [Shell Helpers](#shell-helpers) functionality for commands, flags and
-options. Must restart your shell for this to take effect.
-
-For more information about this feature, please read [the quickstart](
-quickstart.md#enabling-auto-completion-in-your-shell).
-
-Flags:
-
- * `--install` -- Install the new v1.9+ shell completions scripts
- * `--uninstall` -- Uninstall the new v1.9+ shell completions scripts
- * `--uninstall-pre-19` -- Uninstall the legacy pre-v1.9 scripts
- * `--shell <shell>` -- Override the detected shell
- * `--shell-script <file>` -- Override the default shell script file to modify
-
-**Note:** You should uninstall the older pre-v1.9 completions before installing
-the new version.  Once the new version is installed, `--uninstall-pre-19` will
-refuse to run so you will have to either manually edit the file or run
-`--uninstall`, then `--uninstall-pre-19` and finally `--install` again.
-
-### config
-
-Allows you to run through the configuration wizard and update your AWS SSO CLI
-config file (`~/.aws-sso/config.yaml`).   By default, it only does a very basic
-configuration to get started with.  The `--advanced` flag prompts for more 
-settings and is useful for taking advantage of some of the new settings if 
-you've upgraded from a previous version!
-
-Flags:
-
- * `--advanced` -- Prompts for many more config options
-
 ## Environment Variables
 
 ### Honored Variables
@@ -387,7 +412,7 @@ The `file` SecureStore will use the `AWS_SSO_FILE_PASSWORD` environment
 variable for the password if it is set. (Not recommended.)
 
 Additionally, `$AWS_PROFILE` is honored via the standard AWS tooling when using
-the [config-profiles](#config-profiles) command to manage your `~/.aws/config` file.
+the [setup-profiles](#setup-profiles) command to manage your `~/.aws/config` file.
 
 ---
 
@@ -409,12 +434,11 @@ The following environment variables are specific to `aws-sso`:
  * `AWS_SSO_ROLE_NAME` -- The name of the IAM role
  * `AWS_SSO_ROLE_ARN` -- The full ARN of the IAM role
  * `AWS_SSO_SESSION_EXPIRATION`  -- The date and time when the IAM role
-    credentials will expire
+    credentials will expire in [RFC3339 format](https://datatracker.ietf.org/doc/html/rfc3339)
  * `AWS_SSO_DEFAULT_REGION` -- Tracking variable for `AWS_DEFAULT_REGION`
  * `AWS_SSO_PROFILE` -- User customizable varible using the
     [ProfileFormat](config.md#profileformat) template
  * `AWS_SSO` -- AWS SSO instance name
-
 
 **Note:** AWS SSO does _NOT_ set `$AWS_PROFILE` to avoid problems with the AWS tooling
 and SDK.
@@ -422,7 +446,7 @@ and SDK.
 ## Shell Helpers
 
 These are optional helper functions installed in your shell as part of the
-[completions](#completions) command.  To install these helper functions,
+[setup-completions](#setup-completions) command.  To install these helper functions,
 please see the [quickstart](quickstart.md) page.
 
 **Important:** Unlike the commands above, these are standalone shell functions
@@ -433,15 +457,13 @@ override this by first exporting `AWS_SSO` to the value you want to use.
 
 If you want to pass specific args to `aws-sso-profile` you can use the
 `$AWS_SSO_HELPER_ARGS` environment variable.  If nothing is set, then
-`--level error --no-config-check` is used.
+`--level error` is used.
 
 Currently the following shells are supported:
 
- <!-- markdown-link-check-disable -->
  * [bash](https://github.com/synfinatic/aws-sso-cli/blob/main/internal/helper/bash_profile.sh)
  * [zsh](https://github.com/synfinatic/aws-sso-cli/blob/main/internal/helper/zshrc.sh)
  * [fish](https://github.com/synfinatic/aws-sso-cli/blob/main/internal/helper/aws-sso.fish)
- <!-- markdown-link-check-enable-->
 
 **Note:** `zsh` completion requires you to have the following lines set
 before the AWS SSO completions:

@@ -2,7 +2,7 @@ package main
 
 /*
  * AWS SSO CLI
- * Copyright (c) 2021-2023 Aaron Turner  <synfinatic at gmail dot com>
+ * Copyright (c) 2021-2024 Aaron Turner  <synfinatic at gmail dot com>
  *
  * This program is free software: you can redistribute it
  * and/or modify it under the terms of the GNU General Public License as
@@ -34,19 +34,20 @@ import (
 	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/credentials"
 	"github.com/aws/aws-sdk-go-v2/service/sts"
+
 	// "github.com/davecgh/go-spew/spew"
 	"github.com/synfinatic/aws-sso-cli/internal/storage"
 	"github.com/synfinatic/aws-sso-cli/internal/url"
 	"github.com/synfinatic/aws-sso-cli/internal/utils"
-	"github.com/synfinatic/aws-sso-cli/sso"
 )
 
 type ConsoleCmd struct {
 	// Console actually should honor the --region flag
-	Duration int32  `kong:"short='d',help='AWS Session duration in minutes (default 60)'"` // default stored in DEFAULT_CONFIG
-	Prompt   bool   `kong:"short='P',help='Force interactive prompt to select role'"`
-	NoCache  bool   `kong:"help='Do not use cache'"`
-	Region   string `kong:"help='AWS Region',env='AWS_DEFAULT_REGION',predictor='region'"`
+	Duration   int32  `kong:"short='d',help='AWS Session duration in minutes (default 60)'"` // default stored in DEFAULT_CONFIG
+	Prompt     bool   `kong:"short='P',help='Force interactive prompt to select role'"`
+	Region     string `kong:"help='AWS Region',env='AWS_DEFAULT_REGION',predictor='region'"`
+	STSRefresh bool   `kong:"help='Force refresh of STS Token Credentials'"`
+	UrlAction  string `kong:"short='u',help='How to handle URLs [clip|exec|open|print|printurl|granted-containers|open-url-in-container] (default: open)'"`
 
 	Arn       string `kong:"short='a',help='ARN of role to assume',env='AWS_SSO_ROLE_ARN',predictor='arn'"`
 	AccountId int64  `kong:"name='account',short='A',help='AWS AccountID of role to assume',env='AWS_SSO_ACCOUNT_ID',predictor='accountId'"`
@@ -59,6 +60,12 @@ type ConsoleCmd struct {
 	AwsProfile      string `kong:"env='AWS_PROFILE',hidden"`
 }
 
+// AfterApply determines if SSO auth token is required
+func (c ConsoleCmd) AfterApply(runCtx *RunContext) error {
+	runCtx.Auth = AUTH_REQUIRED
+	return nil
+}
+
 func (cc *ConsoleCmd) Run(ctx *RunContext) error {
 	if ctx.Cli.Console.Duration > 0 {
 		ctx.Settings.ConsoleDuration = ctx.Cli.Console.Duration
@@ -68,13 +75,6 @@ func (cc *ConsoleCmd) Run(ctx *RunContext) error {
 		return fmt.Errorf("Invalid --duration %d.  Must be between 15 and 720", ctx.Settings.ConsoleDuration)
 	}
 
-	if ctx.Cli.Console.NoCache {
-		c := &CacheCmd{}
-		if err := c.Run(ctx); err != nil {
-			return err
-		}
-	}
-
 	// do we force interactive prompt?
 	if ctx.Cli.Console.Prompt {
 		return ctx.PromptExec(openConsole)
@@ -82,9 +82,9 @@ func (cc *ConsoleCmd) Run(ctx *RunContext) error {
 
 	// Check our CLI args
 	sci := NewSelectCliArgs(ctx.Cli.Console.Arn, ctx.Cli.Console.AccountId, ctx.Cli.Console.Role, ctx.Cli.Console.Profile)
-	if awssso, err := sci.Update(ctx); err == nil {
+	if err := sci.Update(ctx); err == nil {
 		// successful lookup?
-		return openConsole(ctx, awssso, sci.AccountId, sci.RoleName)
+		return openConsole(ctx, sci.AccountId, sci.RoleName)
 	} else if !errors.Is(err, &NoRoleSelectedError{}) {
 		// invalid arguments, not missing
 		return err
@@ -166,10 +166,9 @@ func consoleViaEnvVars(ctx *RunContext) error {
 }
 
 func consoleViaSDK(ctx *RunContext) error {
-	awssso := doAuth(ctx)
 	rFlat, err := ctx.Settings.Cache.GetSSO().Roles.GetRoleByProfile(ctx.Cli.Console.AwsProfile, ctx.Settings)
 	if err == nil {
-		return openConsole(ctx, awssso, rFlat.AccountId, rFlat.RoleName)
+		return openConsole(ctx, rFlat.AccountId, rFlat.RoleName)
 	}
 
 	region := ctx.Settings.DefaultRegion
@@ -229,7 +228,7 @@ func haveAWSEnvVars(ctx *RunContext) bool {
 }
 
 // opens the AWS console or just prints the URL
-func openConsole(ctx *RunContext, awssso *sso.AWSSSO, accountid int64, role string) error {
+func openConsole(ctx *RunContext, accountid int64, role string) error {
 	region := ctx.Settings.GetDefaultRegion(accountid, role, false)
 	if ctx.Cli.Console.Region != "" {
 		region = ctx.Cli.Console.Region
@@ -242,10 +241,10 @@ func openConsole(ctx *RunContext, awssso *sso.AWSSSO, accountid int64, role stri
 
 	ctx.Settings.Cache.AddHistory(utils.MakeRoleARN(accountid, role))
 	if err := ctx.Settings.Cache.Save(false); err != nil {
-		log.WithError(err).Warnf("Unable to update cache")
+		log.Warn("Unable to update cache", "error", err.Error())
 	}
 
-	creds := GetRoleCredentials(ctx, awssso, accountid, role)
+	creds := GetRoleCredentials(ctx, AwsSSO, ctx.Cli.Console.STSRefresh, accountid, role)
 	return openConsoleAccessKey(ctx, creds, duration, region, accountid, role)
 }
 
@@ -264,7 +263,7 @@ func openConsoleAccessKey(ctx *RunContext, creds *storage.RoleCredentials,
 
 	resp, err := http.Get(signin.GetUrl())
 	if err != nil {
-		log.Debugf(err.Error())
+		log.Debug("http get", "url", signin.GetUrl(), "error", err.Error())
 		// sanitize error and remove sensitive URL from normal output
 		r := regexp.MustCompile(`Get "[^"]+": `)
 		e := r.ReplaceAllString(err.Error(), "")
@@ -280,7 +279,7 @@ func openConsoleAccessKey(ctx *RunContext, creds *storage.RoleCredentials,
 	loginResponse := LoginResponse{}
 	err = json.Unmarshal(body, &loginResponse)
 	if err != nil {
-		log.Tracef("LoginResponse body: %s", body)
+		log.Trace("LoginResponse", "body", body)
 		return fmt.Errorf("Error parsing Login response: %s", err.Error())
 	}
 
@@ -297,7 +296,15 @@ func openConsoleAccessKey(ctx *RunContext, creds *storage.RoleCredentials,
 		SigninToken: loginResponse.SigninToken,
 	}
 
-	urlOpener := url.NewHandleUrl(ctx.Settings.UrlAction, login.GetUrl(),
+	action, err := url.NewAction(ctx.Cli.Console.UrlAction)
+	if err != nil {
+		log.Fatal("Invalid --url-action", "action", ctx.Cli.Console.UrlAction)
+	}
+	if action == "" {
+		action = ctx.Settings.UrlAction
+	}
+
+	urlOpener := url.NewHandleUrl(action, login.GetUrl(),
 		ctx.Settings.Browser, ctx.Settings.UrlExecCommand)
 
 	urlOpener.ContainerSettings(containerParams(ctx, accountId, role))

@@ -2,7 +2,7 @@ package storage
 
 /*
  * AWS SSO CLI
- * Copyright (c) 2021-2023 Aaron Turner  <synfinatic at gmail dot com>
+ * Copyright (c) 2021-2024 Aaron Turner  <synfinatic at gmail dot com>
  *
  * This program is free software: you can redistribute it
  * and/or modify it under the terms of the GNU General Public License as
@@ -28,10 +28,9 @@ import (
 	"time"
 
 	"github.com/99designs/keyring"
-	"github.com/sirupsen/logrus"
-	"github.com/sirupsen/logrus/hooks/test"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/suite"
+	testlogger "github.com/synfinatic/flexlog/test"
 )
 
 type KeyringSuite struct {
@@ -148,6 +147,76 @@ func (suite *KeyringSuite) TestRoleCredentials() {
 
 	err = suite.store.DeleteRoleCredentials("cow")
 	assert.Error(t, err)
+}
+
+func (suite *KeyringSuite) TestEcsBearerToken() {
+	t := suite.T()
+
+	token, err := suite.store.GetEcsBearerToken()
+	assert.NoError(t, err)
+	assert.Empty(t, token)
+
+	err = suite.store.SaveEcsBearerToken("not a real token")
+	assert.NoError(t, err)
+
+	token, err = suite.store.GetEcsBearerToken()
+	assert.NoError(t, err)
+	assert.Equal(t, "not a real token", token)
+
+	err = suite.store.DeleteEcsBearerToken()
+	assert.NoError(t, err)
+
+	token, err = suite.store.GetEcsBearerToken()
+	assert.NoError(t, err)
+	assert.Empty(t, token)
+}
+
+func (suite *KeyringSuite) TestEcsSslKeyPair() { // nolint: dupl
+	t := suite.T()
+
+	cert, err := suite.store.GetEcsSslCert()
+	assert.NoError(t, err)
+	assert.Empty(t, cert)
+
+	key, err := suite.store.GetEcsSslKey()
+	assert.NoError(t, err)
+	assert.Empty(t, key)
+
+	certBytes, err := os.ReadFile("../ecs/server/testdata/localhost.crt")
+	assert.NoError(t, err)
+	keyBytes, err := os.ReadFile("../ecs/server/testdata/localhost.key")
+	assert.NoError(t, err)
+
+	err = suite.store.SaveEcsSslKeyPair([]byte{}, certBytes)
+	assert.NoError(t, err)
+
+	err = suite.store.SaveEcsSslKeyPair(keyBytes, certBytes)
+	assert.NoError(t, err)
+
+	err = suite.store.SaveEcsSslKeyPair(keyBytes, keyBytes)
+	assert.Error(t, err)
+
+	err = suite.store.SaveEcsSslKeyPair(certBytes, certBytes)
+	assert.Error(t, err)
+
+	cert, err = suite.store.GetEcsSslCert()
+	assert.NoError(t, err)
+	assert.Equal(t, string(certBytes), cert)
+
+	key, err = suite.store.GetEcsSslKey()
+	assert.NoError(t, err)
+	assert.Equal(t, string(keyBytes), key)
+
+	err = suite.store.DeleteEcsSslKeyPair()
+	assert.NoError(t, err)
+
+	cert, err = suite.store.GetEcsSslCert()
+	assert.NoError(t, err)
+	assert.Empty(t, cert)
+
+	key, err = suite.store.GetEcsSslKey()
+	assert.NoError(t, err)
+	assert.Empty(t, key)
 }
 
 func (suite *KeyringSuite) TestErrorReadKeyring() {
@@ -456,16 +525,17 @@ func TestSplitCredentials(t *testing.T) {
 	assert.NoError(t, err)
 
 	// setup logger for testing
-	logger, hook := test.NewNullLogger()
-	logger.SetLevel(logrus.DebugLevel)
-	oldLogger := GetLogger()
-	SetLogger(logger)
+	oldLogger := log.Copy()
+	tLogger := testlogger.NewTestLogger("DEBUG")
+	defer tLogger.Close()
+
+	log = tLogger
+	defer func() { log = oldLogger }()
 
 	defer func() {
 		os.RemoveAll(d)
 		os.Unsetenv(ENV_SSO_FILE_PASSWORD)
 		keyringGOOS = ""
-		SetLogger(oldLogger)
 	}()
 
 	os.Setenv(ENV_SSO_FILE_PASSWORD, "justapassword")
@@ -537,10 +607,7 @@ func TestSplitCredentials(t *testing.T) {
 	_, err = store.joinAndGetKeyringData(RECORD_KEY)
 	assert.Error(t, err)
 
-	// but OpenKeyring is fine, just returns a warning
+	// but OpenKeyring is fine
 	_, err = OpenKeyring(c)
 	assert.NoError(t, err)
-	assert.NotNil(t, hook.LastEntry())
-	assert.Equal(t, logrus.WarnLevel, hook.LastEntry().Level)
-	assert.Contains(t, hook.LastEntry().Message, "Unable to fetch")
 }

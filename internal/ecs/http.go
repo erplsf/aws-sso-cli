@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"strconv"
 
+	"github.com/synfinatic/aws-sso-cli/internal/logger"
 	"github.com/synfinatic/aws-sso-cli/internal/storage"
 )
 
@@ -24,7 +25,7 @@ func WriteCreds(w http.ResponseWriter, creds *storage.RoleCredentials) {
 
 	resp := map[string]string{
 		"AccessKeyId":     creds.AccessKeyId,
-		"Expiration":      creds.ExpireISO8601(),
+		"Expiration":      creds.ExpireString(),
 		"RoleArn":         creds.RoleArn(),
 		"SecretAccessKey": creds.SecretAccessKey,
 		"Token":           creds.SessionToken,
@@ -34,6 +35,7 @@ func WriteCreds(w http.ResponseWriter, creds *storage.RoleCredentials) {
 
 // JSONResponse return a JSON blob as a result
 func JSONResponse(w http.ResponseWriter, jdata interface{}) {
+	log := logger.GetLogger()
 	w.Header().Set("Content-Type", CHARSET_JSON)
 	if err := json.NewEncoder(w).Encode(jdata); err != nil {
 		log.Error(err.Error())

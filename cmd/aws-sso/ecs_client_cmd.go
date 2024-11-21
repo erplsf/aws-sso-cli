@@ -2,7 +2,7 @@ package main
 
 /*
  * AWS SSO CLI
- * Copyright (c) 2021-2023 Aaron Turner  <synfinatic at gmail dot com>
+ * Copyright (c) 2021-2024 Aaron Turner  <synfinatic at gmail dot com>
  *
  * This program is free software: you can redistribute it
  * and/or modify it under the terms of the GNU General Public License as
@@ -28,38 +28,33 @@ import (
 	"github.com/synfinatic/aws-sso-cli/internal/ecs"
 	"github.com/synfinatic/aws-sso-cli/internal/ecs/client"
 	"github.com/synfinatic/aws-sso-cli/internal/utils"
-	"github.com/synfinatic/aws-sso-cli/sso"
 	"github.com/synfinatic/gotable"
 )
 
-type EcsListCmd struct{}
-
 type EcsLoadCmd struct {
 	// AWS Params
-	Arn       string `kong:"short='a',help='ARN of role to assume',env='AWS_SSO_ROLE_ARN',predictor='arn'"`
-	AccountId int64  `kong:"name='account',short='A',help='AWS AccountID of role to assume',env='AWS_SSO_ACCOUNT_ID',predictor='accountId',xor='account'"`
-	Role      string `kong:"short='R',help='Name of AWS Role to assume',env='AWS_SSO_ROLE_NAME',predictor='role',xor='role'"`
-	Profile   string `kong:"short='p',help='Name of AWS Profile to assume',predictor='profile',xor='account,role'"`
+	Arn        string `kong:"short='a',help='ARN of role to load',env='AWS_SSO_ROLE_ARN',predictor='arn'"`
+	AccountId  int64  `kong:"name='account',short='A',help='AWS AccountID of role to load',env='AWS_SSO_ACCOUNT_ID',predictor='accountId',xor='account'"`
+	Role       string `kong:"short='R',help='Name of AWS Role to load',env='AWS_SSO_ROLE_NAME',predictor='role',xor='role'"`
+	Profile    string `kong:"short='p',help='Name of AWS Profile to load',predictor='profile',xor='account,role'"`
+	STSRefresh bool   `kong:"help='Force refresh of STS Token Credentials'"`
 
 	// Other params
-	Port    int  `kong:"help='TCP port of aws-sso ECS Server',env='AWS_SSO_ECS_PORT',default=4144"` // SEE ECS_PORT in ecs_cmd.go
-	Slotted bool `kong:"short='s',help='Load credentials in a unique slot using the ProfileName as the key'"`
+	Server  string `kong:"help='Endpoint of aws-sso ECS Server',env='AWS_SSO_ECS_SERVER',default='localhost:4144'"`
+	Slotted bool   `kong:"short='s',help='Load credentials in a unique slot using the ProfileName as the key'"`
 }
 
-type EcsProfileCmd struct {
-	Port int `kong:"help='TCP port of aws-sso ECS Server',env='AWS_SSO_ECS_PORT',default=4144"`
-}
-
-type EcsUnloadCmd struct {
-	Port    int    `kong:"help='TCP port of aws-sso ECS Server',env='AWS_SSO_ECS_PORT',default=4144"`
-	Profile string `kong:"short='p',help='Name of AWS Profile to unload',predictor='profile'"`
+// AfterApply determines if SSO auth token is required
+func (e EcsLoadCmd) AfterApply(runCtx *RunContext) error {
+	runCtx.Auth = AUTH_REQUIRED
+	return nil
 }
 
 func (cc *EcsLoadCmd) Run(ctx *RunContext) error {
 	sci := NewSelectCliArgs(ctx.Cli.Ecs.Load.Arn, ctx.Cli.Ecs.Load.AccountId, ctx.Cli.Ecs.Load.Role, ctx.Cli.Ecs.Load.Profile)
-	if awssso, err := sci.Update(ctx); err == nil {
+	if err := sci.Update(ctx); err == nil {
 		// successful lookup?
-		return ecsLoadCmd(ctx, awssso, sci.AccountId, sci.RoleName)
+		return ecsLoadCmd(ctx, sci.AccountId, sci.RoleName)
 	} else if !errors.Is(err, &NoRoleSelectedError{}) {
 		// invalid arguments, not missing
 		return err
@@ -68,8 +63,18 @@ func (cc *EcsLoadCmd) Run(ctx *RunContext) error {
 	return ctx.PromptExec(ecsLoadCmd)
 }
 
+type EcsProfileCmd struct {
+	Server string `kong:"help='URL endpoint of aws-sso ECS Server',env='AWS_SSO_ECS_SERVER',default='localhost:4144'"`
+}
+
+// AfterApply determines if SSO auth token is required
+func (e EcsProfileCmd) AfterApply(runCtx *RunContext) error {
+	runCtx.Auth = AUTH_NO_CONFIG
+	return nil
+}
+
 func (cc *EcsProfileCmd) Run(ctx *RunContext) error {
-	c := client.NewECSClient(ctx.Cli.Ecs.Profile.Port)
+	c := newClient(ctx.Cli.Ecs.Profile.Server, ctx)
 
 	profile, err := c.GetProfile()
 	if err != nil {
@@ -77,7 +82,7 @@ func (cc *EcsProfileCmd) Run(ctx *RunContext) error {
 	}
 
 	if profile.ProfileName == "" {
-		return fmt.Errorf("No profile loaded in ECS Server.")
+		return fmt.Errorf("no profile loaded in ECS Server")
 	}
 
 	profiles := []ecs.ListProfilesResponse{
@@ -86,17 +91,13 @@ func (cc *EcsProfileCmd) Run(ctx *RunContext) error {
 	return listProfiles(profiles)
 }
 
-func (cc *EcsUnloadCmd) Run(ctx *RunContext) error {
-	c := client.NewECSClient(ctx.Cli.Ecs.Unload.Port)
-
-	return c.Delete(ctx.Cli.Ecs.Unload.Profile)
-}
-
 // Loads our AWS API creds into the ECS Server
-func ecsLoadCmd(ctx *RunContext, awssso *sso.AWSSSO, accountId int64, role string) error {
-	creds := GetRoleCredentials(ctx, awssso, accountId, role)
+func ecsLoadCmd(ctx *RunContext, accountId int64, role string) error {
+	c := newClient(ctx.Cli.Ecs.Load.Server, ctx)
 
-	cache := ctx.Settings.Cache.GetSSO() // ctx.Settings.Cache.Refresh(awssso, ssoConfig, ctx.Cli.SSO)
+	creds := GetRoleCredentials(ctx, AwsSSO, ctx.Cli.Ecs.Load.STSRefresh, accountId, role)
+
+	cache := ctx.Settings.Cache.GetSSO()
 	rFlat, err := cache.Roles.GetRole(accountId, role)
 	if err != nil {
 		return err
@@ -111,18 +112,25 @@ func ecsLoadCmd(ctx *RunContext, awssso *sso.AWSSSO, accountId int64, role strin
 	// save history
 	ctx.Settings.Cache.AddHistory(utils.MakeRoleARN(rFlat.AccountId, rFlat.RoleName))
 	if err := ctx.Settings.Cache.Save(false); err != nil {
-		log.WithError(err).Warnf("Unable to update cache")
+		log.Warn("Unable to update cache", "error", err.Error())
 	}
 
-	// do something
-	c := client.NewECSClient(ctx.Cli.Ecs.Load.Port)
-
-	log.Debugf("%s", spew.Sdump(rFlat))
+	log.Debug("role", "dump", spew.Sdump(rFlat))
 	return c.SubmitCreds(creds, rFlat.Profile, ctx.Cli.Ecs.Load.Slotted)
 }
 
+type EcsListCmd struct {
+	Server string `kong:"help='Endpoint of aws-sso ECS Server',env='AWS_SSO_ECS_SERVER',default='localhost:4144'"`
+}
+
+// AfterApply determines if SSO auth token is required
+func (e EcsListCmd) AfterApply(runCtx *RunContext) error {
+	runCtx.Auth = AUTH_NO_CONFIG
+	return nil
+}
+
 func (cc *EcsListCmd) Run(ctx *RunContext) error {
-	c := client.NewECSClient(ctx.Cli.Ecs.Profile.Port)
+	c := newClient(ctx.Cli.Ecs.Profile.Server, ctx)
 
 	profiles, err := c.ListProfiles()
 	if err != nil {
@@ -134,6 +142,23 @@ func (cc *EcsListCmd) Run(ctx *RunContext) error {
 	}
 
 	return listProfiles(profiles)
+}
+
+type EcsUnloadCmd struct {
+	Profile string `kong:"short='p',help='Slot of AWS Profile to unload',predictor='profile'"`
+	Server  string `kong:"help='Endpoint of aws-sso ECS Server',env='AWS_SSO_ECS_SERVER',default='localhost:4144'"`
+}
+
+// AfterApply determines if SSO auth token is required
+func (e EcsUnloadCmd) AfterApply(runCtx *RunContext) error {
+	runCtx.Auth = AUTH_NO_CONFIG
+	return nil
+}
+
+func (cc *EcsUnloadCmd) Run(ctx *RunContext) error {
+	c := newClient(ctx.Cli.Ecs.Unload.Server, ctx)
+
+	return c.Delete(ctx.Cli.Ecs.Unload.Profile)
 }
 
 func listProfiles(profiles []ecs.ListProfilesResponse) error {
@@ -154,4 +179,16 @@ func listProfiles(profiles []ecs.ListProfilesResponse) error {
 	}
 
 	return err
+}
+
+func newClient(server string, ctx *RunContext) *client.ECSClient {
+	certChain, err := ctx.Store.GetEcsSslCert()
+	if err != nil {
+		log.Fatal("Unable to get ECS SSL cert", "error", err.Error())
+	}
+	bearerToken, err := ctx.Store.GetEcsBearerToken()
+	if err != nil {
+		log.Fatal("Unable to get ECS bearer token", "error", err)
+	}
+	return client.NewECSClient(server, bearerToken, certChain)
 }

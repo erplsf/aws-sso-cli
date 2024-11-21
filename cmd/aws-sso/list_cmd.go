@@ -2,7 +2,7 @@ package main
 
 /*
  * AWS SSO CLI
- * Copyright (c) 2021-2023 Aaron Turner  <synfinatic at gmail dot com>
+ * Copyright (c) 2021-2024 Aaron Turner  <synfinatic at gmail dot com>
  *
  * This program is free software: you can redistribute it
  * and/or modify it under the terms of the GNU General Public License as
@@ -25,9 +25,9 @@ import (
 	"strings"
 
 	"github.com/synfinatic/aws-sso-cli/internal/predictor"
+	"github.com/synfinatic/aws-sso-cli/internal/sso"
 	"github.com/synfinatic/aws-sso-cli/internal/storage"
 	"github.com/synfinatic/aws-sso-cli/internal/utils"
-	"github.com/synfinatic/aws-sso-cli/sso"
 	"github.com/synfinatic/gotable"
 )
 
@@ -36,9 +36,14 @@ type ListCmd struct {
 	CSV        bool     `kong:"help='Generate CSV instead of a table',xor='listfields'"`
 	Prefix     string   `kong:"short='P',help='Filter based on the <FieldName>=<Prefix>'"`
 	Fields     []string `kong:"optional,arg,help='Fields to display',env='AWS_SSO_FIELDS',predictor='fieldList',xor='listfields'"`
-	NoCache    bool     `kong:"help='Do not use cache'"`
 	Sort       string   `kong:"short='s',help='Sort results by the <FieldName>',default='AccountId',env='AWS_SSO_FIELD_SORT',predictor='fieldList'"`
 	Reverse    bool     `kong:"help='Reverse sort results',env='AWS_SSO_FIELD_SORT_REVERSE'"`
+}
+
+// AfterApply list command doesnt require a valid SSO auth token
+func (l ListCmd) AfterApply(runCtx *RunContext) error {
+	runCtx.Auth = AUTH_SKIP
+	return nil
 }
 
 // Actually used in main.go, but definied here for locality
@@ -53,13 +58,6 @@ func (cc *ListCmd) Run(ctx *RunContext) error {
 	if ctx.Cli.List.ListFields {
 		listAllFields()
 		return nil
-	}
-
-	if ctx.Cli.List.NoCache {
-		c := &CacheCmd{}
-		if err = c.Run(ctx); err != nil {
-			return err
-		}
 	}
 
 	if ctx.Cli.List.Prefix != "" {
@@ -85,7 +83,7 @@ func (cc *ListCmd) Run(ctx *RunContext) error {
 	if err = ctx.Settings.Cache.Expired(s); err != nil {
 		c := &CacheCmd{}
 		if err = c.Run(ctx); err != nil {
-			log.WithError(err).Errorf("Unable to refresh local cache")
+			log.Error("Unable to refresh local cache", "error", err.Error())
 		}
 	}
 
@@ -96,16 +94,21 @@ func (cc *ListCmd) Run(ctx *RunContext) error {
 
 	for _, f := range fields {
 		if !predictor.SupportedListField(f) {
-			return fmt.Errorf("Unsupported field: '%s'", f)
+			return fmt.Errorf("unsupported field: '%s'", f)
 		}
 	}
 
 	return printRoles(ctx, fields, ctx.Cli.List.CSV, prefixSearch, ctx.Cli.List.Sort, ctx.Cli.List.Reverse)
 }
 
-// DefaultCmd has no args, and just prints the default fields and exists because
+// DefaultCmd has no args, and just prints the default fields and exits because
 // as of Kong 0.2.18 you can't have a default command which takes args
 type DefaultCmd struct{}
+
+func (d DefaultCmd) AfterApply(runCtx *RunContext) error {
+	runCtx.Auth = AUTH_SKIP
+	return nil
+}
 
 func (cc *DefaultCmd) Run(ctx *RunContext) error {
 	s, err := ctx.Settings.GetSelectedSSO("")
@@ -117,7 +120,7 @@ func (cc *DefaultCmd) Run(ctx *RunContext) error {
 	if err = ctx.Settings.Cache.Expired(s); err != nil {
 		c := &CacheCmd{}
 		if err = c.Run(ctx); err != nil {
-			log.WithError(err).Errorf("Unable to refresh local cache")
+			log.Error("Unable to refresh local cache", "error", err.Error())
 		}
 	}
 
@@ -144,7 +147,7 @@ func printRoles(ctx *RunContext, fields []string, csv bool, prefixSearch []strin
 	sort.SliceStable(allRoles, func(i, j int) bool {
 		a, err := allRoles[i].GetSortableField(sortby)
 		if err != nil {
-			sortError = fmt.Errorf("Invalid --sort: %s", err.Error())
+			sortError = fmt.Errorf("invalid --sort: %s", err.Error())
 			return false
 		}
 		b, _ := allRoles[j].GetSortableField(sortby)
@@ -165,7 +168,7 @@ func printRoles(ctx *RunContext, fields []string, csv bool, prefixSearch []strin
 			}
 
 		default:
-			sortError = fmt.Errorf("Unable to sort by field: %s", sortby)
+			sortError = fmt.Errorf("unable to sort by field: %s", sortby)
 			return false
 		}
 	})
@@ -195,22 +198,13 @@ func printRoles(ctx *RunContext, fields []string, csv bool, prefixSearch []strin
 	if csv {
 		err = gotable.GenerateCSV(tr, fields)
 	} else {
-		// Determine when our AWS SSO session expires
-		// list doesn't call doAuth() so we have to initialize our global *AwsSSO manually
-		var s *sso.SSOConfig
-		s, err = ctx.Settings.GetSelectedSSO(ctx.Cli.SSO)
-		if err != nil {
-			log.Fatalf("%s", err.Error())
-		}
-		AwsSSO = sso.NewAWSSSO(s, &ctx.Store)
-
 		expires := ""
 		ctr := storage.CreateTokenResponse{}
 		if err := ctx.Store.GetCreateTokenResponse(AwsSSO.StoreKey(), &ctr); err != nil {
-			log.Debugf("Unable to get SSO session expire time: %s", err.Error())
+			log.Debug("Unable to get SSO session expire time", "error", err.Error())
 		} else {
 			if exp, err := utils.TimeRemain(ctr.ExpiresAt, true); err != nil {
-				log.Errorf("Unable to determine time remain for %d: %s", ctr.ExpiresAt, err)
+				log.Error("Unable to determine time remain", "expiresAt", ctr.ExpiresAt, "error", err.Error())
 			} else {
 				expires = fmt.Sprintf(" [Expires in: %s]", strings.TrimSpace(exp))
 			}
@@ -255,7 +249,7 @@ func listAllFields() {
 
 	fields := []string{"Field", "Description"}
 	if err := gotable.GenerateTable(ts, fields); err != nil {
-		log.WithError(err).Fatalf("Unable to generate report")
+		log.Fatal("Unable to generate report", "error", err.Error())
 	}
 	fmt.Printf("\n")
 }

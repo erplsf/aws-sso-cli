@@ -2,7 +2,7 @@ package storage
 
 /*
  * AWS SSO CLI
- * Copyright (c) 2021-2023 Aaron Turner  <synfinatic at gmail dot com>
+ * Copyright (c) 2021-2024 Aaron Turner  <synfinatic at gmail dot com>
  *
  * This program is free software: you can redistribute it
  * and/or modify it under the terms of the GNU General Public License as
@@ -38,4 +38,15 @@ type SecureStorage interface {
 	GetStaticCredentials(string, *StaticCredentials) error
 	DeleteStaticCredentials(string) error
 	ListStaticCredentials() []string
+
+	// ECS Server Bearer Token
+	SaveEcsBearerToken(string) error
+	GetEcsBearerToken() (string, error)
+	DeleteEcsBearerToken() error
+
+	// ECS Server SSL Cert
+	SaveEcsSslKeyPair([]byte, []byte) error
+	DeleteEcsSslKeyPair() error
+	GetEcsSslCert() (string, error)
+	GetEcsSslKey() (string, error)
 }

@@ -2,7 +2,7 @@ package storage
 
 /*
  * AWS SSO CLI
- * Copyright (c) 2021-2023 Aaron Turner  <synfinatic at gmail dot com>
+ * Copyright (c) 2021-2024 Aaron Turner  <synfinatic at gmail dot com>
  *
  * This program is free software: you can redistribute it
  * and/or modify it under the terms of the GNU General Public License as
@@ -37,6 +37,9 @@ type JsonStore struct {
 	CreateTokenResponse map[string]CreateTokenResponse `json:"CreateTokenResponse,omitempty"`
 	RoleCredentials     map[string]RoleCredentials     `json:"RoleCredentials,omitempty"`   // ARN = key
 	StaticCredentials   map[string]StaticCredentials   `json:"StaticCredentials,omitempty"` // ARN = key
+	EcsBearerToken      string                         `json:"EcsBearerToken,omitempty"`
+	EcsPrivateKey       string                         `json:"EcsPrivateKey,omitempty"`
+	EcsCertChain        string                         `json:"EcsCertChain,omitempty"`
 }
 
 // OpenJsonStore opens our insecure JSON storage backend
@@ -48,13 +51,16 @@ func OpenJsonStore(filename string) (*JsonStore, error) {
 		CreateTokenResponse: map[string]CreateTokenResponse{},
 		RoleCredentials:     map[string]RoleCredentials{},
 		StaticCredentials:   map[string]StaticCredentials{},
+		EcsBearerToken:      "",
+		EcsPrivateKey:       "",
+		EcsCertChain:        "",
 	}
 
 	cacheBytes, err := os.ReadFile(filename)
 	if errors.Is(err, fs.ErrNotExist) {
 		return &cache, nil
 	} else if err != nil {
-		return &cache, fmt.Errorf("Unable to open %s: %s", filename, err.Error())
+		return &cache, fmt.Errorf("unable to open %s: %s", filename, err.Error())
 	}
 
 	if len(cacheBytes) > 0 {
@@ -66,10 +72,10 @@ func OpenJsonStore(filename string) (*JsonStore, error) {
 
 // save writes the JSON store file, creating the directory if necessary
 func (jc *JsonStore) save() error {
-	log.Debugf("Saving JSON Cache")
+	log.Debug("Saving JSON Cache")
 	jbytes, err := json.MarshalIndent(jc, "", "  ")
 	if err != nil {
-		log.WithError(err).Errorf("Unable to marshal json")
+		log.Error("Unable to marshal json", "error", err)
 		return err
 	}
 
@@ -183,4 +189,52 @@ func (jc *JsonStore) ListStaticCredentials() []string {
 		i++
 	}
 	return ret
+}
+
+// SaveEcsBearerToken stores the token in the json file
+func (jc *JsonStore) SaveEcsBearerToken(token string) error {
+	jc.EcsBearerToken = token
+	return jc.save()
+}
+
+// GetEcsBearerToken retrieves the token from the json file
+func (jc *JsonStore) GetEcsBearerToken() (string, error) {
+	return jc.EcsBearerToken, nil
+}
+
+// DeleteEcsBearerToken deletes the token from the json file
+func (jc *JsonStore) DeleteEcsBearerToken() error {
+	jc.EcsBearerToken = ""
+	return jc.save()
+}
+
+// SaveEcsSslKeyPair stores the SSL private key and certificate chain in the json file
+func (jc *JsonStore) SaveEcsSslKeyPair(privateKey, certChain []byte) error {
+	if err := ValidateSSLCertificate(certChain); err != nil {
+		return err
+	}
+	jc.EcsCertChain = string(certChain)
+
+	if err := ValidateSSLPrivateKey(privateKey); err != nil {
+		return err
+	}
+	jc.EcsPrivateKey = string(privateKey)
+	return jc.save()
+}
+
+// GetEcsSslCert retrieves the SSL certificate chain from the json file
+func (jc *JsonStore) GetEcsSslCert() (string, error) {
+	return jc.EcsCertChain, nil
+}
+
+// GetEcsSslKey retrieves the SSL private keyfrom the json file
+func (jc *JsonStore) GetEcsSslKey() (string, error) {
+	return jc.EcsPrivateKey, nil
+}
+
+// DeleteEcsSslKeyPair deletes the SSL private key and certificate chain from the json file
+func (jc *JsonStore) DeleteEcsSslKeyPair() error {
+	jc.EcsPrivateKey = ""
+	jc.EcsCertChain = ""
+	return jc.save()
 }

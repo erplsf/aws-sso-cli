@@ -2,7 +2,7 @@ package url
 
 /*
  * AWS SSO CLI
- * Copyright (c) 2021-2023 Aaron Turner  <synfinatic at gmail dot com>
+ * Copyright (c) 2021-2024 Aaron Turner  <synfinatic at gmail dot com>
  *
  * This program is free software: you can redistribute it
  * and/or modify it under the terms of the GNU General Public License as
@@ -25,7 +25,6 @@ import (
 	"os"
 	"testing"
 
-	"github.com/sirupsen/logrus"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -58,6 +57,7 @@ func testUrlOpenerWithError(url, browser string) error {
 }
 
 func TestHandleUrl(t *testing.T) {
+	t.Parallel()
 	noCommand := []string{}
 	assert.Panics(t, func() { NewHandleUrl(Exec, "foo", "browser", noCommand) })
 
@@ -141,6 +141,7 @@ func TestHandleUrl(t *testing.T) {
 }
 
 func TestFirefoxContainersUrl(t *testing.T) {
+	t.Parallel()
 	assert.Equal(t, "ext+container:name=Test&url=https%3A%2F%2Fsynfin.net&color=blue&icon=fingerprint",
 		formatContainerUrl(FIREFOX_CONTAINER_FORMAT, "https://synfin.net", "Test", "blue", "fingerprint"))
 
@@ -152,6 +153,7 @@ func TestFirefoxContainersUrl(t *testing.T) {
 }
 
 func TestCommandBuilder(t *testing.T) {
+	t.Parallel()
 	_, _, err := commandBuilder([]string{}, "url")
 	assert.Error(t, err)
 
@@ -180,6 +182,7 @@ func TestCommandBuilder(t *testing.T) {
 }
 
 func TestSelectElement(t *testing.T) {
+	t.Parallel()
 	check := map[string]string{
 		"a":  "turquoise", // 97 % 8 => 1
 		"aa": "green",     // 194 % 8 => 2
@@ -191,6 +194,7 @@ func TestSelectElement(t *testing.T) {
 }
 
 func TestIsContainer(t *testing.T) {
+	t.Parallel()
 	a := Action(Open)
 	assert.False(t, a.IsContainer())
 	a = Exec
@@ -206,6 +210,7 @@ func TestIsContainer(t *testing.T) {
 }
 
 func TestNewAction(t *testing.T) {
+	t.Parallel()
 	a, err := NewAction("clip")
 	assert.NoError(t, err)
 	assert.Equal(t, Clip, a)
@@ -222,18 +227,8 @@ func TestNewAction(t *testing.T) {
 	assert.Error(t, err)
 	assert.Equal(t, ConfigProfilesAction(ConfigProfilesOpen), b)
 }
-
-func TestLogger(t *testing.T) {
-	first := GetLogger()
-	defer SetLogger(first)
-
-	log := logrus.New()
-	SetLogger(log)
-
-	l := GetLogger()
-	assert.Equal(t, log, l)
-}
 func TestNewConfigProfilesAction(t *testing.T) {
+	t.Parallel()
 	a, err := NewConfigProfilesAction("exec")
 	assert.NoError(t, err)
 	assert.Equal(t, a, ConfigProfilesAction("exec"), a)
@@ -248,6 +243,7 @@ func TestNewConfigProfilesAction(t *testing.T) {
 }
 
 func TestSSOAuthAction(t *testing.T) {
+	t.Parallel()
 	// no change
 	a, _ := NewAction("clip")
 	assert.Equal(t, a, SSOAuthAction(Clip))
@@ -269,6 +265,7 @@ func TestSSOAuthAction(t *testing.T) {
 }
 
 func TestAWSFederatedUrl(t *testing.T) {
+	t.Parallel()
 	u := AWSFederatedUrl("us-east-1")
 	assert.Equal(t, u, "https://us-east-1.signin.aws.amazon.com/federation")
 	_, err := url.Parse(u)
@@ -292,6 +289,7 @@ func TestAWSFederatedUrl(t *testing.T) {
 }
 
 func TestAWSConsoleUrl(t *testing.T) {
+	t.Parallel()
 	u := AWSConsoleUrl("cn-north-1", "cn-northwest-1")
 	assert.Equal(t, u, "https://console.amazonaws.cn/console/home?region=cn-northwest-1")
 	_, err := url.Parse(u)
@@ -312,4 +310,16 @@ func TestAWSConsoleUrl(t *testing.T) {
 	assert.NoError(t, err)
 	// _, err = net.LookupIP(pUrl.Hostname())
 	// assert.NoError(t, err)
+}
+
+func TestGetConfigProfilesAction(t *testing.T) {
+	t.Parallel()
+	action := Open
+	assert.Equal(t, ConfigProfilesOpen, action.GetConfigProfilesAction())
+
+	action = Clip
+	assert.Equal(t, ConfigProfilesClip, action.GetConfigProfilesAction())
+
+	action = Print
+	assert.Equal(t, ConfigProfilesOpen, action.GetConfigProfilesAction())
 }

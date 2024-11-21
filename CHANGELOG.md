@@ -1,10 +1,126 @@
 # AWS SSO CLI Changelog
 
-## [Unreleased]
+## [v2.0.0] - XXXX-XX-XX
+
+### Bugs
+
+ * `aws-sso-profile` helper generates error about `--no-config-check` flag 
+ * Honor `DefaultRegion` in config.yaml when using interactive prompt #1075
+
+## [v2.0.0-beta4] - 2024-09-29
+
+### Bugs
+
+ * Fix running the ECS server outside of docker #104
+ * Fix crash while fetching AWS account list
+ * Fix `console` command failing due to lack of authentication
+ * Fix `--lines` argument
+
+### New Features
+
+ * Add basic xonsh shell support
+ * Add AutoLogin config option
+
+### Changes
+
+ * Bump various 3rd party libraries
+ * Improve github actions for builds
+
+## [v2.0.0-beta3] - 2024-08-19
+
+### Bugs
+
+ * Fix ecs docker image build problems
+
+## [v2.0.0-beta2] - 2024-08-19
+
+### Bugs
+
+ * Fix fatal error with `time` command #1008
+
+### Changes
+
+ * No longer show help for sub-commands by default
+ * Warnings about invalid accounts/roles in config.yaml are now Debug messages #980
+ * Default ProfileFormat is now the `Friendly` format #992
+ * Refactor commands under `setup`: #975
+   * `config` is now `setup wizard` and `ConfigProfilesUrlAction` config option is no longer used
+   * `config-profiles` is now `setup profiles`
+   * `completions` is now `setup completions`
+   * `ecs ssl` is now `setup ecs ssl`
+   * Make `--url-action` and `--sts-refresh` command specific options
+   * Refactor `ecs ssl` commands to be just flags.
+ * Remove `--open` option from `process` command #291
+ * Only the and `cache` command will auto-update the contents of `~/.aws/config` #974
+ * `tags` command no longer supports the `--force-update` option
+ * Change default log level from `warn` to `info`
+ * Remove mention from docs that Firefox Multi-Account Containers plugin is supported #1021
+ * Switch from logrus to log/slog #1001
+
+### New Features
+
+ * Now require `login` as a seperate step for better security #291
+ * Remove `flush` command.  Use `logout`
+ * `aws-sso` commands other than `cache` and `login` no longer can trigger a cache refresh without
+    update of `~/.aws/config` file
+ * Add support for running ECS Server via docker (`aws-sso ecs docker ...`)
+ * Add support for `XDG_CONFIG_HOME` env variable to specify config location #1003
+
+## [v1.17.0] - 2024-07-10
+
+### Bugs
+
+ * No longer ignore the `--threads` CLI option
+ * Warn users of invalid AWS Accounts/Roles defined in the config.yaml #962
+
+### New Features
+
+ * Add support for HTTP Auth/`$AWS_CONTAINER_AUTHORIZATION_TOKEN` env variable #516
+ * Add initial prototype support for HTTPS #518
+ * Add Docker container support #569
+ * Add support for ECS Server to listen on other interfaces other than loopback via `--bind-ip`
+ * Replace `--port` with `--server` flag for the `aws-sso ecs [list|load|unload|profile]` commands #937
+ * Update cache during login when relevant settings in the config.yaml changes #555
+ * Add support for `$AWS_SHARED_CREDENTIALS_FILE` #914
+ * Add support for XDG Config path standard: `~/.config/aws-sso` #330
+ * Detect running the config wizard on remote hosts and limit UrlAction #757
+
+### Changes
+
+ * Bump cache file version to 4.
+ * `ConfigProfilesUrlAction` now defaults to value of `UrlAction` instead of `url` #946
+ * Rename/rework many of the `ecs` commands #938
+ * New installs of `aws-sso` will default to `~/.config/aws-sso` instead of `~/.aws-sso` for configuration
+
+## [v1.16.1] - 2024-06-13
+
+### Bugs
+
+ * Fix homebrew build on macOS
+ * `credentials --profiles` is now `credentials --profile` to conform to standard
+
+## [v1.16.0] - 2024-06-12
+
+### New Features
+
+ * Add `credentials` command #867
+ * Add auto-complete for `aws-sso-profile` for fish
+
+### Changes
+
+ * Use RFC3339 for `$AWS_SSO_SESSION_EXPIRATION` #837
+ * Update AWS SDK libraries and other dependencies
+
+### Bugs
+
+ * Fix tab completion for `--profile` flag with fish
+ * `config-profiles` now works for multiple AWS SSO instances #696, #740
+ * Disable linker warnings on macOS with -race flag
+ * `aws-sso-profile` returns usage when run without args #836
 
 ## [v1.15.1] - 2024-04-30
 
-### New Features 
+### New Features
 
  * Add helper aliases for fish shell #361
 
@@ -28,7 +144,7 @@
 
 ### Changes
 
- * Statically link Linux binaries (CGO\_ENABLED=0) #749
+ * Statically link Linux binaries (`$CGO\_ENABLED=0`) #749
  * Document support for Firefox Multi-Account Containers plugin #760
 
 ## [v1.14.2] - 2023-10-19
@@ -53,12 +169,18 @@
 ### New Features
 
  * Config Wizard now prompts for `ProfileFormat` #590
+ * Add `login` command #291
 
 ### Changes
 
- * Documentation is now built via Docker #587
+ * Documentation is now managed by [mkdocs](https://www.mkdocs.org)
  * Improved demos in documentation #551
  * Update many dependencies
+ * Add dependabot
+
+### Deprecated
+
+ * `aws-sso flush -t sso` should not be used.  Use `aws-sso logout` instead.
 
 ## [v1.14.0] - 2023-10-13
 
@@ -85,8 +207,8 @@
 ### Changes
 
  * ECS Server API is now more RESTful and fully document the API
- * Default profile `AWS_CONTAINER_CREDENTIALS_FULL_URI` is now `http://localhost:4144/`
- * Slotted profile `AWS_CONTAINER_CREDENTIALS_FULL_URI` is now `http://localhost:4144/slot/<profile>`
+ * Default profile `$AWS_CONTAINER_CREDENTIALS_FULL_URI` is now `http://localhost:4144/`
+ * Slotted profile `$AWS_CONTAINER_CREDENTIALS_FULL_URI` is now `http://localhost:4144/slot/<profile>`
  * `aws-sso ecs list` and `aws-sso ecs profile` now return the same output format
  * `make tags` now uses [gotags](https://github.com/jstemmer/gotags)
 
@@ -296,7 +418,7 @@
     `ConfigProfilesUrlAction` #387
  * Add support for Granted Containers Firefox plugin #400
  * `UrlAction` and `ConfigProfilesUrlAction` now support `open-url-in-container` and
-	`granted-containers`
+   granted-containers`
 
 ### Changes
 
@@ -339,9 +461,12 @@
  * Renamed the `config` command to update `~/.aws/config` to be `config-profiles`
      which is hopefully more clear
  * `config` command now runs the configuration wizard
- * Deprecated `ConfigUrlAction` option.  Will be automatically upgraded by
-    the `aws-sso config` wizard.
  * `ConfigProfilesUrlAction` replaces `ConfigUrlAction`
+
+### Deprecated
+
+ * `ConfigUrlAction` option.  Will be automatically upgraded by
+    the `aws-sso config` wizard.
 
 ### Bugs
 
@@ -461,6 +586,7 @@
 ## [v1.7.0] - 2022-01-09
 
 ### New Features
+
  * Add `Via` and `SSO` to possible `list` command output fields
  * Add `SSO` to list of valid ProfileFormat template variables
  * Improve ProfileFormat documentation
@@ -481,10 +607,12 @@
 ## [v1.6.1] - 2021-12-31
 
 ### New Features
+
  * The `Via` role option is now a searchable tag #199
  * The `tags` command now returns the keys in sorted order
 
 ### Bug Fixes
+
  * Consistently pad AccountID with zeros whenever necessary
  * Detect role chain loops using `Via` #194
  * AccountAlias/AccountName tags are inconsistenly applied/missing #201
@@ -494,29 +622,35 @@
  * cache now handles multiple AWS SSO Instances correctly which fixes numerous issues #219
 
 ### Changes
+
  * Reduce number of warnings #205
 
 ## [v1.6.0] - 2021-12-24
 
 ### Breaking Changes
+
  * Fix issue with missing colon in parsed/generated Role ARNs for missing AWS region #192
 
 ### New Features
+
  * Setup now prompts for `LogLevel`
  * Suppress bogus warning when saving Role credentials in `wincred` store #183
  * Add support for role chaining using `Via` tag #38
  * Cache file is now versioned for better compatibility across versions of `aws-sso` #195
 
 ### Bug Fixes
+
  * Incorrect `--level` value now correctly tells user the correct name of the flag
  * `exec` command now uses `cmd.exe` when no command is specified
 
 ## [v1.5.1] - 2021-12-15
 
 ### New Features
+
  * Setup now prompts for `HistoryMinutes` and `HistoryLimit`
 
 ### Bug Fixes
+
  * Setup now uses a smaller cursor which doesn't hide the character
  * Fix setup bug where the SSO Instance was always called `Default`
  * Setup no longer accepts invalid characters for strings #178
@@ -525,37 +659,43 @@
 ## [v1.5.0] - 2021-12-14
 
 ### New Features
+
  * Add `HistoryMinutes` option to limit history by time, not just count #139
 
 ### Changes
+
  * Now use macOS `login` Keychain instead of `AWSSSOCli` #150
  * All secure storage methods now store a single entry instead of multiple entries
  * Replace `console --use-sts` with `console --prompt` #169
  * Improve password prompting for file based keyring #171
 
 ### Bug Fixes
+
  * file keyring will no longer infinitely prompt for new password
 
 ## [v1.4.0] - 2021-11-25
 
 ### Breaking Changes
+
  * Standardize on `AWS_SSO` prefix for environment variables
  * Remove `--region` flag for `eval` and `exec` commands
  * `console -use-env` is now `console --use-sts` to be more clear
  * Building aws-sso now requires Go v1.17+
 
 ### New Features
+
  * Add a simple wizard to configure aws-sso on first run if no ~/.aws-sso/config.yaml
-	file exists
+   file exists
  * Update interactive selected item color schme to stand our better. #138
  * Add `eval --clear` and `eval --refresh`
  * Add full support for `DefaultRegion` in config.yaml
- * Add `--no-region` flag for `eval and `exec` commands
+ * Add `--no-region` flag for `eval` and `exec` commands
  * Add `process` command for AWS credential_process in ~/.aws/config #157
  * Add `ConsoleDuration` config option #159
  * Improve documentation of environment variables
 
 ### Bug Fixes
+
  * `exec` now updates the ENV vars of the forked processs rather than our own process
  * `eval` no longer prints URLs #145
  * Will no longer overwrite user defined AWS_DEFAULT_REGION #152
@@ -603,10 +743,10 @@
  * Rework how defaults are handled/settings loaded
  * Remove references to `duration` in config which don't do anything
  * Add additional config file options:
-	- UrlAction
-	- LogLevel
-	- LogLines
-	- DefaultSSO
+      * UrlAction
+      * LogLevel
+      * LogLines
+      * DefaultSSO
  * Replace `--print-url` with `--url-action` #81
  * Add support for `DefaultRegion` in config file  #30
  * `console` command now supports `--region`
@@ -660,7 +800,12 @@
 
 Initial release
 
-[Unreleased]: https://github.com/synfinatic/aws-sso-cli/compare/v1.15.1...main
+[Unreleased]: https://github.com/synfinatic/aws-sso-cli/compare/v2.0.0-beta3...main
+[v2.0.0-beta3]: https://github.com/synfinatic/aws-sso-cli/releases/tag/v2.0.0-beta3
+[v2.0.0-beta2]: https://github.com/synfinatic/aws-sso-cli/releases/tag/v2.0.0-beta2
+[v1.17.0]: https://github.com/synfinatic/aws-sso-cli/releases/tag/v1.17.0
+[v1.16.1]: https://github.com/synfinatic/aws-sso-cli/releases/tag/v1.16.1
+[v1.16.0]: https://github.com/synfinatic/aws-sso-cli/releases/tag/v1.16.0
 [v1.15.1]: https://github.com/synfinatic/aws-sso-cli/releases/tag/v1.15.1
 [v1.15.0]: https://github.com/synfinatic/aws-sso-cli/releases/tag/v1.15.0
 [v1.14.3]: https://github.com/synfinatic/aws-sso-cli/releases/tag/v1.14.3

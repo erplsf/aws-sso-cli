@@ -7,18 +7,18 @@
  * Option 2: [Download RPM or DEB package](https://github.com/synfinatic/aws-sso-cli/releases)
     1. Use your package manager to install (Linux only)
  * Option 3: Build & Install via [Homebrew](https://brew.sh)
-	1. Run `brew install aws-sso-cli`
+    1. Run `brew install aws-sso-cli`
         Note: You no longer need to install the hombrew tap as `aws-sso-cli` is
         now part of [homebrew-core](
         https://github.com/Homebrew/homebrew-core/blob/master/Formula/a/aws-sso-cli.rb).
  * Option 4: Build from source:
-    1. Install [GoLang](https://golang.org) v1.17+ and GNU Make
+    1. Install [GoLang](https://golang.org) v1.22+ and GNU Make
     1. Clone this repo
     1. Run `make` (or `gmake` for GNU Make)
     1. Your binary will be created in the `dist` directory
     1. Run `make install` to install in /usr/local/bin
  * Option 5: `go install`:
-    1. Install [GoLang](https://golang.org) v1.19+ and GNU Make
+    1. Install [GoLang](https://golang.org) v1.22+ and GNU Make
     1. `go install github.com/synfinatic/aws-sso-cli/cmd/aws-sso@latest`
 
 Note: macOS binaries must be build on macOS to enable Keychain support.
@@ -47,8 +47,8 @@ For more information about configuring `aws-sso` read the
 [configuration guide](config.md).
 
 You can re-run through the configuration wizard at any time by running
-`aws-sso config`.  By default, this only does a very basic setup; for a more
-advanced setup, use `aws-sso config --advanced`.
+`aws-sso setup wizard`.  By default, this only does a very basic setup; for a more
+advanced setup, use `aws-sso setup wizard --advanced`.
 
 ## Enabling auto-completion in your shell
 
@@ -65,34 +65,11 @@ shell for those changes to take effect.
 Guided setup should of prompted you to install auto-completions, but
 you can always re-run it for a different shell:
 
-`aws-sso completions -I`
+`aws-sso setup completions -I`
 
 or if you wish to uninstall them:
 
-`aws-sso completions -U`
-
----
-
-### Upgrading from before v1.9.0
-
-First, there is no longer an `install-completions` command as of v1.9.0,
-that functionality (and more) has been moved to `completions`.
-
-You should _first_ uninstall the old completions (sorry) and then install
-the new versions.  This manual uninstall/re-install is a one time thing,
-but necessary.
-
- 1. `aws-sso completions --uninstall-pre-19`
- 2. `aws-sso completions -I`
-
-Users of older versions will note that starting in v1.9.0, running
-`completions -I` or `completions -U` will present you a diff of file changes
-for you to accept.
-
-Also, unlike with older versions, only your current shell is modified when
-you run `completions -I` or `completions -U`, but
-`completions --uninstall-pre-19` uses the original code/library and will
-modify your `bash`, `zsh` and `fish` init scripts.
+`aws-sso setup completions -U`
 
 ---
 
@@ -101,7 +78,7 @@ modify your `bash`, `zsh` and `fish` init scripts.
 Upgrading from versions 1.9.0 or better is just like installing for
 first time users:
 
-`aws-sso completions -I`
+`aws-sso setup completions -I`
 
 Any changes will be presented to you in diff format and you will be given
 the option to accept or reject the changes.
@@ -111,7 +88,7 @@ the option to accept or reject the changes.
 ### More information
 
 More information on auto-completion can be found in the documentation
-for the [completions command](commands.md#completions).
+for the [setup completions](commands.md#setup-completions) command.
 
 ## Use `aws-sso` on the CLI for AWS API calls
 
@@ -131,8 +108,8 @@ which can be confusing.
 Full documentation for auto-completion [is available here](
 commands.md#shell-helpers).
 
-**Note:** Use of this feature requires [enabling auto-completion](
-#enabling-auto-completion-in-your-shell) as described above.
+**Note:** Use of this feature requires
+[enabling auto-completion](#enabling-auto-completion-in-your-shell) as described above.
 
 #### Usage
 
@@ -191,7 +168,7 @@ and the `$AWS_PROFILE` environment variable, AWS SSO CLI can support that as wel
 
 #### Configuration
 
-Run: `aws-sso config-profiles`
+Run: `aws-sso setup profiles`
 
 This will add the following lines (example) to your `~/.aws/config` file:
 
@@ -214,7 +191,6 @@ docs:
  * [AutoConfigCheck / ConfigUrlAction](config.md#autoconfigcheck-configurlaction)
  * [ConfigVariables](config.md#configvariables)
 
-
 #### Usage
 
 Once your `~/.aws/config` file has been modified as described above, you can
@@ -226,15 +202,13 @@ The only difference is that your API keys are managed via AWS SSO and always
 safely stored encrypted on disk!
 
 ```bash
-$ export AWS_PROFILE=<name>
-$ aws sts get-caller-identity
-$ aws s3api list-buckets
+export AWS_PROFILE=<name>
 ```
 
 or for a single command:
 
 ```bash
-$ AWS_PROFILE=<name> aws sts get-caller-identity
+AWS_PROFILE=<name> aws sts get-caller-identity
 ```
 
 Note that every time the `aws` tool or your code makes a request for the API

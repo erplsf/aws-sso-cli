@@ -2,7 +2,7 @@ package storage
 
 /*
  * AWS SSO CLI
- * Copyright (c) 2021-2023 Aaron Turner  <synfinatic at gmail dot com>
+ * Copyright (c) 2021-2024 Aaron Turner  <synfinatic at gmail dot com>
  *
  * This program is free software: you can redistribute it
  * and/or modify it under the terms of the GNU General Public License as
@@ -19,10 +19,13 @@ package storage
  */
 
 import (
+	"os"
 	"testing"
 	"time"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/synfinatic/flexlog"
+	testlogger "github.com/synfinatic/flexlog/test"
 )
 
 func TestCreateTokenResponseExpired(t *testing.T) {
@@ -99,20 +102,10 @@ func TestExpireString(t *testing.T) {
 	x := RoleCredentials{
 		Expiration: 0,
 	}
-	assert.Equal(t, time.Unix(0, 0).String(), x.ExpireString())
-
-	x.Expiration = time.Now().UnixMilli()
-	assert.Equal(t, time.UnixMilli(x.Expiration).String(), x.ExpireString())
-}
-
-func TestExpireISO8601(t *testing.T) {
-	x := RoleCredentials{
-		Expiration: 0,
-	}
-	assert.Equal(t, time.Unix(0, 0).Format(time.RFC3339), x.ExpireISO8601())
+	assert.Equal(t, time.Unix(0, 0).Format(time.RFC3339), x.ExpireString())
 
 	x.Expiration = time.Now().Unix()
-	assert.Equal(t, time.UnixMilli(x.Expiration).Format(time.RFC3339), x.ExpireISO8601())
+	assert.Equal(t, time.UnixMilli(x.Expiration).Format(time.RFC3339), x.ExpireString())
 }
 
 func TestGetArn(t *testing.T) {
@@ -124,6 +117,14 @@ func TestGetArn(t *testing.T) {
 }
 
 func TestGetAccountIdStr(t *testing.T) {
+	// setup logger for testing
+	oldLogger := log.Copy()
+	tLogger := testlogger.NewTestLogger("DEBUG")
+	defer tLogger.Close()
+
+	log = tLogger
+	defer func() { log = oldLogger }()
+
 	x := StaticCredentials{
 		UserName:  "foobar",
 		AccountId: 23456789012,
@@ -134,7 +135,11 @@ func TestGetAccountIdStr(t *testing.T) {
 		UserName:  "foobar",
 		AccountId: -1,
 	}
-	assert.Panics(t, func() { x.AccountIdStr() })
+	_ = x.AccountIdStr()
+	msg := testlogger.LogMessage{}
+	assert.NoError(t, tLogger.GetNext(&msg))
+	assert.Contains(t, msg.Message, "Invalid AccountId")
+	assert.Equal(t, flexlog.LevelFatal, msg.Level)
 }
 
 func TestGetHeader(t *testing.T) {
@@ -178,4 +183,34 @@ func TestRoleCredentialsValidate(t *testing.T) {
 	k = r
 	k.Expiration = 0
 	assert.ErrorContains(t, (&k).Validate(), "expiration")
+}
+
+func TestValidateSSLCertificate(t *testing.T) {
+	t.Parallel()
+	cert, err := os.ReadFile("../ecs/server/testdata/localhost.crt")
+	assert.NoError(t, err)
+
+	err = ValidateSSLCertificate(cert)
+	assert.NoError(t, err)
+
+	cert, err = os.ReadFile("../ecs/server/testdata/localhost.key")
+	assert.NoError(t, err)
+
+	err = ValidateSSLCertificate(cert)
+	assert.Error(t, err)
+}
+
+func TestValidateSSLPrivateKey(t *testing.T) {
+	t.Parallel()
+	key, err := os.ReadFile("../ecs/server/testdata/localhost.key")
+	assert.NoError(t, err)
+
+	err = ValidateSSLPrivateKey(key)
+	assert.NoError(t, err)
+
+	key, err = os.ReadFile("../ecs/server/testdata/localhost.crt")
+	assert.NoError(t, err)
+
+	err = ValidateSSLPrivateKey(key)
+	assert.Error(t, err)
 }

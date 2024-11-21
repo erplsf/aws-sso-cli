@@ -2,7 +2,7 @@ package server
 
 /*
  * AWS SSO CLI
- * Copyright (c) 2021-2023 Aaron Turner  <synfinatic at gmail dot com>
+ * Copyright (c) 2021-2024 Aaron Turner  <synfinatic at gmail dot com>
  *
  * This program is free software: you can redistribute it
  * and/or modify it under the terms of the GNU General Public License as
@@ -22,12 +22,14 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"os"
 	"regexp"
 	"testing"
 	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/synfinatic/aws-sso-cli/internal/ecs"
+	"github.com/synfinatic/aws-sso-cli/internal/ecs/client"
 	"github.com/synfinatic/aws-sso-cli/internal/storage"
 	"golang.org/x/net/nettest"
 )
@@ -106,6 +108,7 @@ func TestSlottedCreds(t *testing.T) {
 func TestBaseURL(t *testing.T) {
 	l, err := nettest.NewLocalListener("tcp")
 	assert.NoError(t, err)
+	defer l.Close()
 
 	es := &EcsServer{
 		listener: l,
@@ -113,14 +116,12 @@ func TestBaseURL(t *testing.T) {
 
 	str := es.BaseURL()
 	assert.Regexp(t, regexp.MustCompile(`^http://`), str)
-}
 
-func TestAuthToken(t *testing.T) {
-	es := &EcsServer{
-		authToken: "token",
-	}
-
-	assert.Equal(t, "token", es.AuthToken())
+	// check ssl
+	es.privateKey = "test"
+	es.certChain = "test"
+	str = es.BaseURL()
+	assert.Regexp(t, regexp.MustCompile(`^https://`), str)
 }
 
 func TestExpiredCredentials(t *testing.T) {
@@ -132,32 +133,63 @@ func TestServerWithAuth(t *testing.T) {
 	l, err := nettest.NewLocalListener("tcp")
 	assert.NoError(t, err)
 
-	s, err := NewEcsServer(context.TODO(), "AuthToken", l)
+	s, err := NewEcsServer(context.TODO(), "AuthToken", l, "", "")
 	assert.NoError(t, err)
+	defer s.Close()
 
 	go func() {
-		err = s.Serve()
+		_ = s.Serve()
 	}()
 
 	res, err := http.Get(fmt.Sprintf("http://%s/", l.Addr()))
 	assert.NoError(t, err)
 	assert.Equal(t, http.StatusForbidden, res.StatusCode)
-	l.Close()
 }
 
 func TestServerWithoutAuth(t *testing.T) {
 	l, err := nettest.NewLocalListener("tcp")
 	assert.NoError(t, err)
-	s, err := NewEcsServer(context.TODO(), "", l)
+
+	s, err := NewEcsServer(context.TODO(), "", l, "", "")
 	assert.NoError(t, err)
+	defer s.Close()
 
 	go func() {
-		err = s.Serve()
+		_ = s.Serve()
 	}()
 
 	res, err := http.Get(fmt.Sprintf("http://%s/", l.Addr()))
 	assert.NoError(t, err)
 	// nothing was loaded yet, so 404
 	assert.Equal(t, http.StatusNotFound, res.StatusCode)
-	l.Close()
+}
+
+func TestServerWithSSL(t *testing.T) {
+	l, err := nettest.NewLocalListener("tcp")
+	assert.NoError(t, err)
+
+	// replace loading from SecureStore
+	privateKey, err := os.ReadFile("./testdata/localhost.key")
+	assert.NoError(t, err)
+	certChain, err := os.ReadFile("./testdata/localhost.crt")
+	assert.NoError(t, err)
+
+	s, err := NewEcsServer(context.TODO(), "", l, string(privateKey), string(certChain))
+	assert.NoError(t, err)
+	defer s.Close()
+
+	go func() {
+		_ = s.Serve()
+	}()
+
+	httpClient, err := client.NewHTTPClient(string(certChain))
+	assert.NoError(t, err)
+
+	req, err := http.NewRequest(http.MethodGet, fmt.Sprintf("https://%s/", l.Addr()), nil)
+	assert.NoError(t, err)
+
+	res, err := httpClient.Do(req)
+	assert.NoError(t, err)
+	// nothing was loaded yet, so 404
+	assert.Equal(t, http.StatusNotFound, res.StatusCode)
 }

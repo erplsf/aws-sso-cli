@@ -2,7 +2,7 @@ package main
 
 /*
  * AWS SSO CLI
- * Copyright (c) 2021-2023 Aaron Turner  <synfinatic at gmail dot com>
+ * Copyright (c) 2021-2024 Aaron Turner  <synfinatic at gmail dot com>
  *
  * This program is free software: you can redistribute it
  * and/or modify it under the terms of the GNU General Public License as
@@ -25,24 +25,25 @@ import (
 	// log "github.com/sirupsen/logrus"
 	"github.com/synfinatic/aws-sso-cli/internal/storage"
 	"github.com/synfinatic/aws-sso-cli/internal/utils"
-	"github.com/synfinatic/aws-sso-cli/sso"
 )
 
 type ProcessCmd struct {
 	// AWS Params
-	Arn       string `kong:"short='a',help='ARN of role to assume',xor='arn-1',xor='arn-2',predictor='arn'"`
-	AccountId int64  `kong:"name='account',short='A',help='AWS AccountID of role to assume',xor='arn-1',predictor='accountId'"`
-	Role      string `kong:"short='R',help='Name of AWS Role to assume',xor='arn-2',predictor='role'"`
-	Profile   string `kong:"short='p',help='Name of AWS Profile to assume',xor='arn-1',xor='arn-2',predictor='profile'"`
+	Arn        string `kong:"short='a',help='ARN of role to assume',xor='arn-1',xor='arn-2',predictor='arn'"`
+	AccountId  int64  `kong:"name='account',short='A',help='AWS AccountID of role to assume',xor='arn-1',predictor='accountId'"`
+	Role       string `kong:"short='R',help='Name of AWS Role to assume',xor='arn-2',predictor='role'"`
+	Profile    string `kong:"short='p',help='Name of AWS Profile to assume',xor='arn-1',xor='arn-2',predictor='profile'"`
+	STSRefresh bool   `kong:"help='Force refresh of STS Token Credentials'"`
+}
+
+// AfterApply list command requires a valid SSO auth token
+func (p ProcessCmd) AfterApply(runCtx *RunContext) error {
+	runCtx.Auth = AUTH_REQUIRED
+	return nil
 }
 
 func (cc *ProcessCmd) Run(ctx *RunContext) error {
 	var err error
-
-	switch ctx.Cli.UrlAction {
-	case "print", "printurl":
-		return fmt.Errorf("unsupported --url-action=print|printurl option")
-	}
 
 	role := ctx.Cli.Process.Role
 	account := ctx.Cli.Process.AccountId
@@ -64,11 +65,10 @@ func (cc *ProcessCmd) Run(ctx *RunContext) error {
 	}
 
 	if role == "" || account == 0 {
-		return fmt.Errorf("Please specify --arn or --account and --role")
+		return fmt.Errorf("please specify --arn or --account and --role")
 	}
 
-	awssso := doAuth(ctx)
-	return credentialProcess(ctx, awssso, account, role)
+	return credentialProcess(ctx, account, role)
 }
 
 type CredentialProcessOutput struct {
@@ -86,7 +86,7 @@ func NewCredentialsProcessOutput(creds *storage.RoleCredentials) *CredentialProc
 		AccessKeyId:     x.AccessKeyId,
 		SecretAccessKey: x.SecretAccessKey,
 		SessionToken:    x.SessionToken,
-		Expiration:      x.ExpireISO8601(),
+		Expiration:      x.ExpireString(),
 	}
 	return &c
 }
@@ -99,8 +99,8 @@ func (cpo *CredentialProcessOutput) Output() (string, error) {
 	return string(b), nil
 }
 
-func credentialProcess(ctx *RunContext, awssso *sso.AWSSSO, accountId int64, role string) error {
-	creds := GetRoleCredentials(ctx, awssso, accountId, role)
+func credentialProcess(ctx *RunContext, accountId int64, role string) error {
+	creds := GetRoleCredentials(ctx, AwsSSO, ctx.Cli.Process.STSRefresh, accountId, role)
 
 	cpo := NewCredentialsProcessOutput(creds)
 	out, err := cpo.Output()

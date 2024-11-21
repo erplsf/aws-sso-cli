@@ -1,6 +1,7 @@
-PROJECT_VERSION := 1.15.1
-DOCKER_REPO     := synfinatic
-PROJECT_NAME    := aws-sso
+PROJECT_VERSION        := 2.0.0-beta5
+DOCKER_REPO            := synfinatic
+PROJECT_NAME           := aws-sso
+DOCKER_PROJECT_NAME    := aws-sso-cli-ecs-server
 
 DIST_DIR ?= dist/
 GOOS ?= $(shell uname -s | tr "[:upper:]" "[:lower:]")
@@ -35,6 +36,12 @@ BUILDINFOS                ?= $(shell date +%FT%T%z)$(BUILDINFOSDET)
 LDFLAGS                   := -X "main.Version=$(PROJECT_VERSION)" -X "main.Delta=$(PROJECT_DELTA)" -X "main.Buildinfos=$(BUILDINFOS)" -X "main.Tag=$(PROJECT_TAG)" -X "main.CommitID=$(PROJECT_COMMIT)"
 OUTPUT_NAME               := $(DIST_DIR)$(PROJECT_NAME)-$(PROJECT_VERSION)  # default for current platform
 
+#ifeq ($(GOOS),darwin)
+# https://github.com/golang/go/issues/61229#issuecomment-1988965927
+# this doesn't work for homebrew with clang it seems: https://github.com/Homebrew/homebrew-core/pull/174439
+#LDFLAGS := $(LDFLAGS) -extldflags=-Wl,-ld_classic
+#endif
+
 # go build flags
 GOBFLAGS                  := -trimpath
 
@@ -64,8 +71,9 @@ uninstall:  ## Uninstall binary from $INSTALL_PREFIX
 	rm $(INSTALL_PREFIX)/bin/$(PROJECT_NAME)
 
 release-brew: ## Create a PR against homebrew to bump the version
-	VERSION=$(PROJECT_VERSION) ./scripts/release-check.sh
-	brew update && brew bump-formula-pr --version $(PROJECT_VERSION) aws-sso-cli
+	@echo "we are in the auto-bump list:  https://github.com/Homebrew/homebrew-core/blob/master/.github/autobump.txt"
+#	VERSION=$(PROJECT_VERSION) ./scripts/release-check.sh
+#	brew update && brew bump-formula-pr --version $(PROJECT_VERSION) aws-sso-cli
 
 release-tag: ## Tag our current HEAD as v$(PROJECT_VERSION)
 	git tag -sa v$(PROJECT_VERSION) -m 'release $(PROJECT_VERSION)'
@@ -88,14 +96,14 @@ package: linux linux-arm64  ## Build deb/rpm packages
 		-v $$(pwd)/dist:/root/dist \
 		-e VERSION=$(PROJECT_VERSION) aws-sso-cli-builder:latest
 
-tags: cmd/aws-sso/*.go sso/*.go internal/*/*.go internal/*/*/*.go ## Create tags file for vim, etc
+tags: cmd/*/*.go internal/*/*.go internal/*/*/*.go ## Create tags file for vim, etc
 	@echo Make sure you have Go Tags installed: https://github.com/jstemmer/gotags
 	gotags -f tags -sort=true $$(find . -type f -name "*.go")
 
 
 .build-release: windows windows32 linux linux-arm64 darwin darwin-arm64
 
-.validate-release: ALL release-check
+.validate-release: ALL
 	@TAG=$$(./$(DIST_DIR)$(PROJECT_NAME) version 2>/dev/null | grep '(v$(PROJECT_VERSION))'); \
 		if test -z "$$TAG"; then \
 		echo "Build tag from does not match PROJECT_VERSION=v$(PROJECT_VERSION) in Makefile:" ; \
@@ -136,7 +144,7 @@ debug: .prepare ## Run debug in dlv
 
 .PHONY: unittest
 unittest: ## Run go unit tests
-	go test -race -covermode=atomic -coverprofile=coverage.out  ./...
+	go test -ldflags='$(LDFLAGS)' -covermode=atomic -coverprofile=coverage.out  ./...
 
 .PHONY: test-race
 test-race: ## Run `go test -race` on the code
@@ -163,7 +171,7 @@ $(DIST_DIR):
 
 .PHONY: fmt
 fmt: ## Format Go code
-	@gofmt -s -w */*.go */*/*.go
+	@gofmt -s -w */*/*.go
 
 .PHONY: test-fmt
 test-fmt: fmt ## Test to make sure code if formatted correctly
@@ -186,7 +194,7 @@ lint:  ## Run golangci-lint
 
 test-homebrew: $(DIST_DIR)$(PROJECT_NAME)  ## Run the homebrew tests
 	@$(DIST_DIR)$(PROJECT_NAME) --config /dev/null version 2>/dev/null | grep -q "AWS SSO CLI Version $(PROJECT_VERSION)"
-	@$(DIST_DIR)$(PROJECT_NAME) --config /dev/null 2>&1 | grep -q "No AWS SSO providers have been configured."
+	@$(DIST_DIR)$(PROJECT_NAME) --config /dev/null 2>&1 | grep -q "no AWS SSO providers have been configured"
 
 # Build targets for our supported plaforms
 windows: $(WINDOWS_BIN)  ## Build 64bit x86 Windows binary
@@ -251,8 +259,8 @@ loc:  ## Print LOC stats
 	wc -l $$(find . -name "*.go")
 
 update-copyright:  ## Update the copyright year on *.go
-	$(shell YEAR=$$(date +%Y) LAST_YEAR=$$(($$(date +%Y)-1)) \
-		sed -i '' -Ee "s|2021-${LAST_YEAR}|2021-${YEAR}|" $$(find . -name "*.go"))
+	$(shell export YEAR=$$(date +%Y) && export LAST_YEAR=$$(($$(date +%Y)-1)) && \
+		sed -i '' -Ee "s|2021-${LAST_YEAR}|2021-${YEAR}|" $$(find . -name "*.go") mkdocs.yml)
 	@echo "Updated copyright to 2021-$$(date +%Y)"
 
 serve-docs:  ## Run mkdocs server on localhost:8000
@@ -261,3 +269,7 @@ serve-docs:  ## Run mkdocs server on localhost:8000
 		-v $$(pwd):/docs \
 		-p 8000:8000 \
 		synfinatic/mkdocs-material:latest
+
+docker:  ## Build docker image
+	docker build -t $(DOCKER_REPO)/$(DOCKER_PROJECT_NAME):$(PROJECT_VERSION) \
+		-t $(DOCKER_REPO)/$(DOCKER_PROJECT_NAME):latest .

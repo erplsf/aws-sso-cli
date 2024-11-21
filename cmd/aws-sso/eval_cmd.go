@@ -2,7 +2,7 @@ package main
 
 /*
  * AWS SSO CLI
- * Copyright (c) 2021-2023 Aaron Turner  <synfinatic at gmail dot com>
+ * Copyright (c) 2021-2024 Aaron Turner  <synfinatic at gmail dot com>
  *
  * This program is free software: you can redistribute it
  * and/or modify it under the terms of the GNU General Public License as
@@ -40,6 +40,12 @@ type EvalCmd struct {
 	EnvArn   string `kong:"hidden,env='AWS_SSO_ROLE_ARN'"` // used for refresh
 }
 
+// AfterApply determines if SSO auth token is required
+func (e EvalCmd) AfterApply(runCtx *RunContext) error {
+	runCtx.Auth = AUTH_REQUIRED
+	return nil
+}
+
 func (cc *EvalCmd) Run(ctx *RunContext) error {
 	var err error
 
@@ -53,7 +59,7 @@ func (cc *EvalCmd) Run(ctx *RunContext) error {
 	// refreshing?
 	if ctx.Cli.Eval.Refresh {
 		if ctx.Cli.Eval.EnvArn == "" {
-			return fmt.Errorf("Unable to determine current IAM role")
+			return fmt.Errorf("%s", "Unable to determine current IAM role")
 		}
 		accountid, role, err = utils.ParseRoleARN(ctx.Cli.Eval.EnvArn)
 		if err != nil {
@@ -78,13 +84,11 @@ func (cc *EvalCmd) Run(ctx *RunContext) error {
 		role = ctx.Cli.Eval.Role
 		accountid = ctx.Cli.Eval.AccountId
 	} else {
-		return fmt.Errorf("Please specify --refresh, --clear, --arn, or --account and --role")
+		return fmt.Errorf("%s", "Please specify --refresh, --clear, --arn, or --account and --role")
 	}
 	region := ctx.Settings.GetDefaultRegion(accountid, role, ctx.Cli.Eval.NoRegion)
 
-	awssso := doAuth(ctx)
-
-	for k, v := range execShellEnvs(ctx, awssso, accountid, role, region) {
+	for k, v := range execShellEnvs(ctx, accountid, role, region) {
 		if isBashLike() {
 			if len(v) == 0 {
 				fmt.Printf("unset %s\n", k)
@@ -94,8 +98,10 @@ func (cc *EvalCmd) Run(ctx *RunContext) error {
 		} else if runtime.GOOS == "windows" {
 			// powershell Invoke-Expression https://github.com/synfinatic/aws-sso-cli/issues/188
 			fmt.Printf("$Env:%s = \"%s\"\r\n", k, v)
+		} else if os.Getenv("XONSH_VERSION") != "" {
+			fmt.Printf("$%s = '%s'\n", k, v)
 		} else {
-			return fmt.Errorf("invalid or unsupported shell.  Please file a bug!")
+			return fmt.Errorf("%s", "invalid or unsupported shell.  Please file a bug!")
 		}
 	}
 	return nil
@@ -135,6 +141,9 @@ func unsetEnvVars(ctx *RunContext) error {
 		} else if runtime.GOOS == "windows" {
 			// PowerShell
 			fmt.Printf("$Env:%s = \"\"\r\n", e)
+		} else if os.Getenv("XONSH_VERSION") != "" {
+			// xonsh behaves like python
+			fmt.Printf("del $%s\n", e)
 		} else {
 			return fmt.Errorf("invalid or unsupported shell.  Please file a bug!")
 		}
@@ -156,5 +165,6 @@ func isBashLike() bool {
 			return true
 		}
 	}
+
 	return false
 }

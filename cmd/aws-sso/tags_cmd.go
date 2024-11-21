@@ -2,7 +2,7 @@ package main
 
 /*
  * AWS SSO CLI
- * Copyright (c) 2021-2023 Aaron Turner  <synfinatic at gmail dot com>
+ * Copyright (c) 2021-2024 Aaron Turner  <synfinatic at gmail dot com>
  *
  * This program is free software: you can redistribute it
  * and/or modify it under the terms of the GNU General Public License as
@@ -22,51 +22,33 @@ import (
 	"fmt"
 	"sort"
 
-	"github.com/synfinatic/aws-sso-cli/sso"
+	"github.com/synfinatic/aws-sso-cli/internal/sso"
 )
 
 type TagsCmd struct {
-	AccountId   int64  `kong:"name='account',short='A',help='Filter results based on AWS AccountID'"`
-	Role        string `kong:"short='R',help='Filter results based on AWS Role Name'"`
-	ForceUpdate bool   `kong:"help='Force account/role cache update'"`
+	AccountId int64  `kong:"name='account',short='A',help='Filter results based on AWS AccountID'"`
+	Role      string `kong:"short='R',help='Filter results based on AWS Role Name'"`
+}
+
+// AfterApply determines if SSO auth token is required
+func (t TagsCmd) AfterApply(runCtx *RunContext) error {
+	runCtx.Auth = AUTH_SKIP
+	return nil
 }
 
 func (cc *TagsCmd) Run(ctx *RunContext) error {
 	set := ctx.Settings
 	cache := ctx.Settings.Cache.GetSSO()
-	if ctx.Cli.Tags.ForceUpdate {
-		s := set.SSO[ctx.Cli.SSO]
-		awssso := sso.NewAWSSSO(s, &ctx.Store)
-		err := awssso.Authenticate(ctx.Settings.UrlAction, ctx.Settings.Browser)
-		if err != nil {
-			log.WithError(err).Fatalf("Unable to authenticate")
-		}
+	s, err := ctx.Settings.GetSelectedSSO(ctx.Cli.SSO)
+	if err != nil {
+		return err
+	}
 
-		ssoName, err := ctx.Settings.GetSelectedSSOName(ctx.Cli.SSO)
-		if err != nil {
-			log.Fatalf(err.Error())
-		}
-
-		err = set.Cache.Refresh(awssso, s, ssoName)
-		if err != nil {
-			log.WithError(err).Fatalf("Unable to refresh role cache")
-		}
-		err = set.Cache.Save(true)
-		if err != nil {
-			log.WithError(err).Errorf("Unable to save cache")
-		}
-	} else {
-		s, err := ctx.Settings.GetSelectedSSO(ctx.Cli.SSO)
-		if err != nil {
+	if err := set.Cache.Expired(s); err != nil {
+		log.Warn(err.Error())
+		c := &CacheCmd{}
+		if err = c.Run(ctx); err != nil {
 			return err
-		}
-
-		if err := set.Cache.Expired(s); err != nil {
-			log.Warn(err.Error())
-			c := &CacheCmd{}
-			if err = c.Run(ctx); err != nil {
-				return err
-			}
 		}
 	}
 	roles := []*sso.AWSRoleFlat{}
