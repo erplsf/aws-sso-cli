@@ -17,7 +17,7 @@ require (
 	github.com/manifoldco/promptui v0.9.0
 	github.com/posener/complete v1.2.3
 	github.com/skratchdot/open-golang v0.0.0-20200116055534-eef842397966
-	github.com/stretchr/testify v1.9.0
+	github.com/stretchr/testify v1.10.0
 	github.com/synfinatic/flexlog v0.0.5
 	github.com/synfinatic/gotable v0.0.3
 	github.com/willabides/kongplete v0.2.0
@@ -74,8 +74,10 @@ require (
 	github.com/aws/aws-sdk-go-v2/service/sso v1.22.1
 	github.com/aws/aws-sdk-go-v2/service/ssooidc v1.26.2
 	github.com/aws/aws-sdk-go-v2/service/sts v1.30.1
+	github.com/danjacques/gofslock v0.0.0-20240212154529-d899e02bfe22
 	github.com/docker/docker v27.2.1+incompatible
 	github.com/docker/go-connections v0.5.0
+	github.com/jpillora/backoff v1.0.0
 	golang.org/x/net v0.31.0
 )
 
