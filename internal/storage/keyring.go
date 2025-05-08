@@ -162,10 +162,10 @@ func fileKeyringPassword(prompt string) (string, error) {
 	}
 	s := string(b)
 	if s == "" {
-		fmt.Println()
+		fmt.Fprintf(os.Stderr, "\n")
 		panic("Aborting with empty password")
 	}
-	fmt.Println()
+	fmt.Fprintf(os.Stderr, "\n")
 	return s, nil
 }
 
