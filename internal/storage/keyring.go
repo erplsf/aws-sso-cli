@@ -169,7 +169,7 @@ func fileKeyringPassword(prompt string) (string, error) {
 	return s, nil
 }
 
-func OpenKeyring(cfg *keyring.Config) (*KeyringStore, error) {
+func OpenKeyring(cfg *keyring.Config) (SecureStorage, error) {
 	ring, err := keyring.Open(*cfg)
 	if err != nil {
 		return nil, err
