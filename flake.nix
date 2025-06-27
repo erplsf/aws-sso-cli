@@ -15,7 +15,7 @@
 
           src = ./.;
 
-          vendorHash = "sha256-Nsw75DIyX60PkgpjGheSNckYpXfEahHIGD3LuLjKBHs=";
+          vendorHash = "sha256-SNMU7qDfLRGUSLjzrJHtIMgbcRc2DxXwWEUaUEY6PME=";
 
           checkFlags = [ "-skip=^TestDetectShellBash$" ];
         };
