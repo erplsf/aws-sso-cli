@@ -3,6 +3,11 @@
 
 ## [Unreleased]
 
+### New Features
+
+* Add support for `ansi-osc52` copying of URLs into clipboard #1070
+* `--url-action` now supports auto-complete
+
 ### Bugs
 
 * Fix clearing ENV vars under Windows Powershell #1244
