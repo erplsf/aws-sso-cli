@@ -20,7 +20,7 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Install Go
         uses: actions/setup-go@v5
@@ -48,7 +48,7 @@ jobs:
     runs-on: macos-latest
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Install Go
         uses: actions/setup-go@v5
@@ -76,20 +76,20 @@ jobs:
 
     steps:
       - name: Download ubuntu binaries
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v5
         with:
           name: ubuntu-build-files
           path: dist/
 
       - name: Download macos binaries
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v5
         with:
           name: macos-build-files
           path: dist/
 
       # Source: https://github.com/crazy-max/ghaction-import-gpg
       - name: Import GPG key
-        uses: crazy-max/ghaction-import-gpg@v6.2.0
+        uses: crazy-max/ghaction-import-gpg@v6.3.0
         with:
           gpg_private_key: ${{ secrets.GPG_PRIVATE_KEY }}
           passphrase: ${{ secrets.GPG_PASSPHRASE }}
