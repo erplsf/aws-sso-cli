@@ -23,7 +23,7 @@
 
           src = ./.;
 
-          vendorHash = "sha256-K4VdK4E+ShQtkr+CwN2K0qPuL0wfsMFW1pLU/JSslxs=";
+          vendorHash = "sha256-0+QW2tivn+RgzRArq0UQzMLquQqLQpxX5lb3q1dFDiY=";
 
           checkFlags = [ "-skip=^TestDetectShellBash$" ];
         };
